@@ -35,7 +35,7 @@ const ACCOUNTS = process.env.SPOTIFY_ACCOUNTS_BASE ?? 'https://accounts.spotify.
  * proxy forwards /callback to this server.
  */
 const REDIRECT = process.env.SPOTIFY_REDIRECT ?? 'http://127.0.0.1:5180/callback';
-const SCOPES = 'playlist-modify-public user-read-private';
+const SCOPES = 'playlist-modify-public playlist-modify-private playlist-read-private user-read-private';
 
 const AUTH_FILE = new URL('.spotify.json', import.meta.url).pathname;
 const VERIFIER_FILE = new URL('.verifier.json', import.meta.url).pathname;
@@ -411,6 +411,7 @@ const server = createServer(async (request, response) => {
         response_type: 'code',
         redirect_uri: REDIRECT,
         scope: SCOPES,
+        show_dialog: 'true',
         code_challenge_method: 'S256',
         code_challenge: createHash('sha256').update(verifier).digest('base64url'),
       });
@@ -457,14 +458,23 @@ const server = createServer(async (request, response) => {
 
     if (url.pathname === '/api/status') {
       let name = null;
+      let scopesOk = false;
       if (authorised()) {
         try {
-          name = (await accountToken()).name;
+          const { token, name: who } = await accountToken();
+          name = who;
+          /* Reading the account's own playlists needs a playlist scope; if it is
+             refused, the consent was granted without the permissions we asked for. */
+          const probe = await fetch(`${SPOTIFY}/me/playlists?limit=1`, {
+            headers: { authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10_000),
+          });
+          scopesOk = probe.ok;
         } catch {
           name = null;
         }
       }
-      return json(response, 200, { connected: authorised(), name, clientId: !!CLIENT_ID });
+      return json(response, 200, { connected: authorised(), name, scopesOk, clientId: !!CLIENT_ID });
     }
 
     if (url.pathname === '/api/setup') {
