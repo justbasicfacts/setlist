@@ -1197,3 +1197,60 @@ main {
   font-size: 13px;
   color: var(--muted);
 }
+
+
+/* ------------------------------------------------------------- marquee --- */
+
+.marquee {
+  position: relative;
+  margin: 0 calc(50% - 50vw) 0;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--lime);
+  color: var(--ink);
+  border-bottom: 2px solid var(--ink);
+  transform: rotate(-0.6deg) translateY(6px);
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.marquee-track {
+  display: inline-flex;
+  gap: 22px;
+  padding: 7px 22px;
+  white-space: nowrap;
+  will-change: transform;
+  animation: marquee-slide 34s linear infinite;
+}
+
+.marquee span {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.marquee:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+@keyframes marquee-slide {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+}
+
+
+/* the tilted strip must not create a sideways scroll */
+html, body { overflow-x: hidden; }
+.marquee { margin-left: -50vw; margin-right: -50vw; }
+
+
+/* full bleed, centred: equal negative margins on both sides */
+.marquee {
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  width: 100vw;
+}

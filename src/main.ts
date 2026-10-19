@@ -173,6 +173,17 @@ const render = (): void => {
   const songs = lineup?.rows.flatMap((gig) => gig.songs).filter((song) => song.title) ?? [];
 
   app.innerHTML = `
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track">
+        ${Array.from({ length: 2 })
+          .map(
+            () =>
+              `<span>who's playing?</span><span>&#9733;</span><span>every gig in town this week</span><span>&#9733;</span><span>one song each</span><span>&#9733;</span><span>zero research</span><span>&#9733;</span><span>lineups change on mondays</span><span>&#9733;</span>`,
+          )
+          .join('')}
+      </div>
+    </div>
+
     <header class="bar">
       <p class="wordmark">who's playing?</p>
       <p class="tag">Every gig in town this week, with one song from everyone on the bill.</p>
