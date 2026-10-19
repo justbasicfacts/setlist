@@ -227,6 +227,8 @@ const fromTicketmaster = (raw, origin) =>
     const headline = event.name?.split(' - ')[0]?.trim();
     const date = event.dates?.start?.localDate ?? '';
     const venue = event._embedded?.venues?.[0];
+    const venueName = venue?.name?.trim() || '';
+    const venueCity = venue?.city?.name?.trim() || '';
 
     const venueLat = Number(venue?.location?.latitude ?? NaN);
     const venueLon = Number(venue?.location?.longitude ?? NaN);
@@ -241,7 +243,9 @@ const fromTicketmaster = (raw, origin) =>
       venue: venue?.name?.trim() || 'Venue to be announced',
       district: venue?.city?.name ?? '',
       time: event.dates?.start?.localTime?.slice(0, 5) ?? '',
-      artists: mergeNames(attractions.length > 0 ? attractions : headline ? [headline] : []),
+      /* Only billed performers. Event titles are often the venue or a party series. */
+      artists: mergeNames(attractions),
+      sameCity: !!venueCity && fold(venueCity) === fold(origin.cityName || origin.name),
       away,
       source: 'Ticketmaster',
     };
@@ -291,9 +295,13 @@ const buildLineup = async (city, week) => {
   if (cached) return { ...cached, cached: true };
 
   /* Anything whose venue is more than 30 km away is not "in town". */
-  const all = fromTicketmaster(await ticketmaster(city, week), city).filter(
-    (event) => event.away === null || event.away <= 30,
-  );
+  /*
+   * Local means provable: either the venue is in the chosen city, or it is within 30 km
+   * of the pin. A listing with neither is not shown, however it was found.
+   */
+  const all = fromTicketmaster(await ticketmaster(city, week), city)
+    .filter((event) => event.artists.length > 0)
+    .filter((event) => (event.away !== null && event.away <= 30) || event.sameCity);
 
   /* Listings without a venue cannot be distance-checked, so they only stay as filler. */
   const withVenue = all.filter((event) => event.venue !== 'Venue to be announced');
