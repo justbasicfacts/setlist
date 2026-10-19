@@ -1146,3 +1146,28 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* the play mark is always visible: it is the only sign the row can be clicked */
+.gig .songs li .play {
+  opacity: 0.7;
+  color: var(--lime);
+  font-size: 10px;
+  width: 14px;
+  flex: 0 0 14px;
+}
+.gig .songs li:not(.playable) .play {
+  opacity: 0;
+}
+.gig .songs li.playable:hover .play,
+.gig .songs li.playable:focus-within .play {
+  opacity: 1;
+}
+.gig .songs li.playable:hover {
+  background: rgba(196, 255, 61, 0.06);
+}
+.gig .songs li.playable {
+  border-radius: 6px;
+  margin: 0 -6px;
+  padding: 2px 6px;
+}
