@@ -31,15 +31,12 @@ export type Track = {
 export type Source = 'ticketmaster' | 'sample';
 
 const KEY = typeof __TICKETMASTER_KEY__ === 'string' ? __TICKETMASTER_KEY__.trim() : '';
-const SPOTIFY_READY = typeof __SPOTIFY_READY__ === 'boolean' ? __SPOTIFY_READY__ : false;
-
 export const hasKey = KEY.length > 0;
-export const spotifyReady = SPOTIFY_READY;
 
 /* Titles to fall back on when Spotify cannot be asked. One per artist we seed. */
 const CATALOGUE: Record<string, string> = {
   'Lera Lynn': 'What Is This Body?',
-  Egg: 'Germs',
+  Yaeji: 'Raingurl',
   Turnstile: 'Mystery',
   Megadeth: 'Sweating Bullets',
   'Massive Attack': 'Teardrop',
@@ -67,7 +64,7 @@ const CATALOGUE: Record<string, string> = {
 /* The sample pool per city, used when there is no key or the request fails. */
 const POOL: Record<string, Event[]> = {
   berlin: [
-    { city: 'Berlin', day: 'Thu', venue: 'Kantine am Berghain', artists: ['Lera Lynn', 'Egg'] },
+    { city: 'Berlin', day: 'Thu', venue: 'Kantine am Berghain', artists: ['Lera Lynn', 'Yaeji'] },
     { city: 'Berlin', day: 'Fri', venue: 'Astra', artists: ['Fontaines D.C.', 'Sprints'] },
     { city: 'Berlin', day: 'Fri', venue: 'OHM', artists: ['Bicep', 'Overmono'], note: 'bring earplugs' },
     { city: 'Berlin', day: 'Sat', venue: 'Columbiahalle', artists: ['Little Simz'] },
@@ -88,6 +85,9 @@ const POOL: Record<string, Event[]> = {
     { city: 'Lisbon', day: 'Sun', venue: 'Casa Capitão', artists: ['Tame Impala', 'Arooj Aftab'] },
   ],
 };
+
+/* Berlin exists in more than one country, and the city filter alone does not care. */
+const COUNTRY: Record<string, string> = { berlin: 'DE', london: 'GB', lisbon: 'PT' };
 
 const capitalise = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
 
@@ -157,12 +157,18 @@ const toEvent = (raw: TmEvent, city: string): Event | null => {
   const artists = attractions.length > 0 ? attractions : headline ? [headline] : [];
   if (artists.length === 0) return null;
 
+  /* Plenty of real listings are announced before the room is, and show it. */
+  const venue = raw._embedded?.venues?.[0]?.name?.trim() || 'TBA';
+  const redundant = headline
+    ? artists.some((name) => name.trim().toLowerCase() === headline.toLowerCase())
+    : true;
+
   return {
     city,
     day,
-    venue: raw._embedded?.venues?.[0]?.name?.trim() || 'Venue to confirm',
+    venue,
     artists,
-    note: attractions.length > 0 && headline ? headline : undefined,
+    note: attractions.length > 0 && headline && !redundant ? headline : undefined,
   };
 };
 
@@ -182,15 +188,19 @@ export const fetchEvents = async (
   if (!hasKey) return { events: sampleEvents(city, week), source: 'sample' };
 
   const { start, end } = weekRange(week);
+  const country = COUNTRY[city.trim().toLowerCase()];
   const params = new URLSearchParams({
     apikey: KEY,
     city: city.trim(),
+    /* Music only: the city feed happily returns stand-up comedy and car shows. */
+    classificationName: 'music',
     /* Local to the venue, which is what "that week in that city" means. */
     localStartDateTime: `${isoDay(start)}T00:00:00`,
     localEndDateTime: `${isoDay(end)}T23:59:59`,
     size: '40',
     sort: 'date,asc',
   });
+  if (country) params.set('countryCode', country);
 
   try {
     const response = await fetch(
@@ -222,100 +232,20 @@ export const fetchEvents = async (
   }
 };
 
-/* ------------------------------------------------------------ Spotify --- */
-
-type Resolved = { title: string; url?: string; fromSpotify: boolean };
-
-const resolved = new Map<string, Resolved>();
-
-let token: { value: string; expires: number } | null = null;
-let inFlight: Promise<string | null> | null = null;
-
-const requestToken = async (): Promise<string | null> => {
-  try {
-    const response = await fetch('/api/spotify-token');
-    if (!response.ok) return null;
-    const body = (await response.json()) as { access_token?: string; expires_in?: number };
-    if (!body.access_token) return null;
-    token = { value: body.access_token, expires: Date.now() + (body.expires_in ?? 3600) * 1000 };
-    return token.value;
-  } catch {
-    return null;
-  }
-};
-
-/**
- * One token for the whole page. The lookups run in parallel, so without memoising the
- * in-flight promise every artist asks for its own token: three artists, three requests.
- */
-const spotifyToken = (): Promise<string | null> => {
-  if (!SPOTIFY_READY) return Promise.resolve(null);
-  if (token && token.expires > Date.now() + 30_000) return Promise.resolve(token.value);
-  if (!inFlight) {
-    inFlight = requestToken().finally(() => {
-      inFlight = null;
-    });
-  }
-  return inFlight;
-};
-
-/** The artist's most popular track, or the built-in title when Spotify is silent. */
-const resolveTrack = async (artist: string): Promise<Resolved> => {
-  const cached = resolved.get(artist);
-  if (cached) return cached;
-
-  const fallback: Resolved = {
-    title: CATALOGUE[artist] ?? 'Untitled banger (we checked, it is fine)',
-    fromSpotify: false,
-  };
-
-  const bearer = await spotifyToken();
-  if (!bearer) return fallback;
-
-  try {
-    const params = new URLSearchParams({ q: `artist:"${artist}"`, type: 'track', limit: '1' });
-    const response = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
-      headers: { authorization: `Bearer ${bearer}` },
-    });
-    if (!response.ok) return fallback;
-
-    const body = (await response.json()) as {
-      tracks?: { items?: { name?: string; external_urls?: { spotify?: string } }[] };
-    };
-    const item = body.tracks?.items?.[0];
-    if (!item?.name) return fallback;
-
-    const found: Resolved = {
-      title: item.name,
-      url: item.external_urls?.spotify,
-      fromSpotify: true,
-    };
-    resolved.set(artist, found);
-    return found;
-  } catch {
-    return fallback;
-  }
-};
-
-/** One track per artist playing, in gig order, with the gig as the reason. */
-export const buildPlaylist = async (events: Event[]): Promise<Track[]> => {
-  const artists = [...new Set(events.flatMap((event) => event.artists))];
-  await Promise.all(artists.map((artist) => resolveTrack(artist)));
-
-  const tracks: Track[] = [];
+/** Every artist on the week's list, once, in gig order. */
+export const artistsIn = (events: Event[]): string[] => {
   const seen = new Set<string>();
-
+  const names: string[] = [];
   for (const event of events) {
     for (const artist of event.artists) {
       if (seen.has(artist)) continue;
       seen.add(artist);
-      const info = resolved.get(artist) ?? {
-        title: CATALOGUE[artist] ?? 'Untitled banger (we checked, it is fine)',
-        fromSpotify: false,
-      };
-      tracks.push({ artist, ...info, event });
+      names.push(artist);
     }
   }
-
-  return tracks;
+  return names;
 };
+
+/** The standing-in title for an artist, when Spotify will not answer. */
+export const fallbackTitle = (artist: string): string =>
+  CATALOGUE[artist] ?? 'Untitled banger (we checked, it is fine)';
