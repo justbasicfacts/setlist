@@ -158,6 +158,11 @@ const render = (): void => {
             />
           </label>
           ${
+            state.open && state.cities.length === 0 && state.query.trim().length >= 2
+              ? `<p class="suggest empty-suggest">No city found for &ldquo;${escape(state.query.trim())}&rdquo;.</p>`
+              : ''
+          }
+          ${
             state.open && state.cities.length > 0
               ? `<ul class="suggest" role="listbox">
                    ${state.cities
@@ -229,6 +234,13 @@ const render = (): void => {
   input?.addEventListener('input', (event) => {
     state.query = (event.target as HTMLInputElement).value;
     void findCities(state.query);
+  });
+  input?.addEventListener('keydown', (event) => {
+    if ((event as KeyboardEvent).key === 'Enter' && state.cities.length > 0) {
+      event.preventDefault();
+      const first = state.cities[0];
+      pick(first);
+    }
   });
   input?.addEventListener('focus', () => {
     if (state.cities.length > 0) {

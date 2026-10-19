@@ -67,12 +67,17 @@ const weekHeading = (week) => (week === 'next' ? 'next week' : 'this week');
 
 /** Any city worth searching, from a free text query. */
 const findCities = async (query) => {
+  /*
+   * No featuretype filter: asking for "city" excludes places OSM tags as an
+   * administrative boundary, which is how Istanbul and several other capitals are
+   * stored. Settlements are picked out by hand below instead.
+   */
   const params = new URLSearchParams({
     q: query,
     format: 'jsonv2',
     addressdetails: '1',
-    limit: '8',
-    featuretype: 'city',
+    limit: '12',
+    'accept-language': 'en',
   });
 
   const response = await fetch(`${NOMINATIM}/search?${params.toString()}`, {
@@ -82,13 +87,15 @@ const findCities = async (query) => {
   if (!response.ok) throw Object.assign(new Error(`Nominatim answered ${response.status}`), { code: 502 });
   const body = await response.json();
 
+  const fold = (value) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   const seen = new Set();
   const cities = [];
   for (const hit of body) {
     const country = hit.address?.country_code?.toUpperCase() ?? '';
-    const settlement = hit.address?.city ?? hit.address?.town ?? hit.address?.village ?? hit.address?.municipality;
+    const settlement =
+      hit.address?.city ?? hit.address?.town ?? hit.address?.village ?? hit.address?.municipality ?? hit.address?.county;
     const name = settlement ?? hit.name ?? hit.display_name?.split(',')[0] ?? '';
-    const key = `${name.toLowerCase()}|${country}`;
+    const key = `${fold(name)}|${country}`;
     if (!name || !country || !settlement || seen.has(key)) continue;
     seen.add(key);
     cities.push({
