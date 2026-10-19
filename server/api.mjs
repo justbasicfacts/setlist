@@ -171,8 +171,9 @@ const ticketmaster = async (city, week) => {
   const base = {
     apikey: TM_KEY,
     classificationName: 'music',
-    localStartDateTime: `${start}T00:00:00`,
-    localEndDateTime: `${end}T23:59:59`,
+    /* Ticketmaster wants the trailing Z; without it the window is ignored outright. */
+    startDateTime: `${start}T00:00:00Z`,
+    endDateTime: `${end}T23:59:59Z`,
     size: '50',
     sort: 'date,asc',
   };
@@ -299,9 +300,14 @@ const buildLineup = async (city, week) => {
    * Local means provable: either the venue is in the chosen city, or it is within 30 km
    * of the pin. A listing with neither is not shown, however it was found.
    */
+  const { start, end } = weekRange(week);
+
   const all = fromTicketmaster(await ticketmaster(city, week), city)
     .filter((event) => event.artists.length > 0)
-    .filter((event) => (event.away !== null && event.away <= 30) || event.sameCity);
+    /* The week is enforced here as well as in the query: a stray month cannot leak in. */
+    .filter((event) => !!event.date && event.date >= start && event.date <= end)
+    /* Distance wins when it is known; the city name is only a fallback. */
+    .filter((event) => (event.away !== null ? event.away <= 30 : event.sameCity));
 
   /* Listings without a venue cannot be distance-checked, so they only stay as filler. */
   const withVenue = all.filter((event) => event.venue !== 'Venue to be announced');
