@@ -197,16 +197,23 @@ const authorised = () => {
   }
 };
 
-const accountRequest = async (body) => {
-  const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+const accountRequest = async (body, { basic = true } = {}) => {
+  const headers = { 'content-type': 'application/x-www-form-urlencoded' };
+  /* PKCE exchanges carry the verifier, not the secret; mixing the two is rejected. */
+  if (basic) headers.authorization = `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64')}`;
+
   const response = await fetch(`${ACCOUNTS}/api/token`, {
     method: 'POST',
-    headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
+    headers,
     body: new URLSearchParams(body).toString(),
     signal: AbortSignal.timeout(15_000),
   });
   const json = await response.json();
-  if (!response.ok) throw new Error(json.error_description ?? `token ${response.status}`);
+  if (!response.ok) {
+    const reason = json.error_description ?? json.error ?? `token ${response.status}`;
+    console.log(`  token request failed: ${response.status} ${reason}`);
+    throw new Error(reason);
+  }
   return json;
 };
 
@@ -367,6 +374,15 @@ export const lineup = async (city, week) => {
 
 /* --------------------------------------------------------------------- http --- */
 
+const html = (body) =>
+  `<!doctype html><meta charset="utf-8"><title>Who's Playing?</title>` +
+  `<body style="font:16px/1.6 system-ui;background:#0f0f0f;color:#f2f2ee;padding:48px;max-width:640px">${body}</body>`;
+
+const send = (response, status, body) => {
+  response.writeHead(status, { 'content-type': 'text/html; charset=utf-8' });
+  response.end(body);
+};
+
 const json = (response, status, body) => {
   response.writeHead(status, {
     'content-type': 'application/json',
@@ -382,6 +398,7 @@ const server = createServer(async (request, response) => {
   try {
     if (url.pathname === '/auth') {
       if (!CLIENT_ID) return json(response, 501, { error: 'SPOTIFY_CLIENT_ID is not set' });
+      console.log('  auth: sending the browser to Spotify');
       const verifier = randomBytes(48).toString('base64url');
       writeJson(VERIFIER_FILE, { verifier });
       const params = new URLSearchParams({
@@ -405,15 +422,32 @@ const server = createServer(async (request, response) => {
       const { verifier } = readJson(VERIFIER_FILE, {});
       if (!verifier) return json(response, 400, { error: 'the login expired, start again at /auth' });
 
-      const token = await accountRequest({
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: REDIRECT,
-        code_verifier: verifier,
-      });
+      console.log('  callback: exchanging the code');
+
+      let token;
+      try {
+        token = await accountRequest(
+          {
+            grant_type: 'authorization_code',
+            client_id: CLIENT_ID,
+            code,
+            redirect_uri: REDIRECT,
+            code_verifier: verifier,
+          },
+          { basic: false },
+        );
+      } catch (failure) {
+        return send(response, 400, html(`<h2>Spotify refused the login</h2><p>${failure.message}</p><p>Start again at <a href="/auth">/auth</a>.</p>`));
+      }
+
+      if (!token.refresh_token) {
+        return send(response, 400, html('<h2>Spotify sent no refresh token</h2><p>Try again at <a href="/auth">/auth</a>.</p>'));
+      }
+
       writeJson(AUTH_FILE, { refresh_token: token.refresh_token });
       userToken = { token: '', expires: 0, id: '', name: '' };
-      return json(response, 200, { ok: true, message: 'Connected. Playlists are made in this account from now on.' });
+      console.log('  callback: connected');
+      return send(response, 200, html('<h2>Connected.</h2><p>Playlists are made in this account from now on. <a href="http://localhost:5180">Back to the site</a>.</p>'));
     }
 
     if (url.pathname === '/api/status') {

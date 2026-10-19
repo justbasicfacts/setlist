@@ -9,7 +9,11 @@ export default defineConfig(({ mode }) => {
       port: 5180,
       host: true,
       /* The Spotify refresh token must not live in the browser: the server owns it. */
-      proxy: { '/api': 'http://localhost:5181' },
+      proxy: {
+        '/api': 'http://localhost:5181',
+        '/auth': 'http://localhost:5181',
+        '/callback': 'http://localhost:5181',
+      },
     },
     define: {
       __TICKETMASTER_KEY__: JSON.stringify(env.TICKETMASTER_API_KEY || env.VITE_TICKETMASTER_KEY || ''),
