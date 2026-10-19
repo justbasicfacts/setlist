@@ -258,7 +258,13 @@ const render = (): void => {
             ? `<p class="also">Playlists can live in your own Spotify instead of here. <a class="linkish" href="/auth">Connect once</a>, then they are made automatically for every city and week.</p>`
             : ''
         }
-        ${state.connected && lineup?.spotify ? `<p class="also">In your Spotify: <b>${lineup.spotify.count}</b> tracks${lineup.spotify.reused ? ' (made earlier, left alone)' : ' (made just now)'}.</p>` : ''}
+        ${
+          state.connected && lineup?.spotify
+            ? lineup.spotify.count > 0
+              ? `<p class="also">In your Spotify: <b>${lineup.spotify.count}</b> tracks${lineup.spotify.reused ? ' (made earlier, left alone)' : ' (made just now)'}.</p>`
+              : `<p class="also">The playlist for this week is in your Spotify and empty. It fills itself on a later visit, once Spotify allows searches again. <a class="linkish" href="${escape(lineup.spotify.url)}" target="_blank" rel="noopener">Open it</a></p>`
+            : ''
+        }
         ${
           state.weeks
             ? `<p class="also">${
