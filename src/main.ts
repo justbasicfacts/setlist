@@ -181,6 +181,71 @@ const pick = (city: City): void => {
   void load();
 };
 
+/* --------------------------------------------------------------- player --- */
+
+let queue: Song[] = [];
+let position = -1;
+
+/** The frame is rebuilt per song: it is the one way that works without the JS API. */
+const showVideo = (id: string | null, searchUrl: string): void => {
+  const host = app.querySelector<HTMLElement>('#yt');
+  if (!host) return;
+
+  host.innerHTML = id
+    ? `<iframe title="YouTube player" width="100%" height="152" frameborder="0"
+         src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0"
+         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+         allowfullscreen></iframe>`
+    : `<p class="noembed">No video found. <a href="${searchUrl}" target="_blank" rel="noopener">Search YouTube</a>.</p>`;
+};
+
+const stopPlaying = (): void => {
+  const host = app.querySelector<HTMLElement>('#yt');
+  if (host) host.innerHTML = '';
+  const bar = app.querySelector<HTMLElement>('#nowbar');
+  if (bar) bar.hidden = true;
+  app.querySelectorAll<HTMLLIElement>('.songs li').forEach((row) => row.classList.remove('playing'));
+};
+
+const playAt = async (index: number): Promise<void> => {
+  const tracks = (state.lineup?.rows ?? []).flatMap((gig) => gig.songs).filter((song): song is Song & { title: string } => !!song.title);
+  if (index < 0 || index >= tracks.length) return;
+
+  queue = tracks;
+  position = index;
+  const song = tracks[index];
+
+  const bar = app.querySelector<HTMLElement>('#nowbar');
+  const labelEl = app.querySelector<HTMLElement>('#nowlabel');
+  if (bar) bar.hidden = false;
+  if (labelEl) labelEl.textContent = `${song.artist} \u2014 ${song.title}`;
+
+  const term = encodeURIComponent(`${song.artist} ${song.title}`);
+  const services = app.querySelector<HTMLElement>('#services');
+  if (services) {
+    services.innerHTML = [
+      ['YouTube', `https://www.youtube.com/results?search_query=${term}`],
+      ['Spotify', `https://open.spotify.com/search/${term}`],
+      ['Apple Music', `https://music.apple.com/search?term=${term}`],
+      ['Deezer', `https://www.deezer.com/search/${term}`],
+      ['Bandcamp', `https://bandcamp.com/search?q=${term}`],
+    ]
+      .map(([name, href]) => `<a href="${href}" target="_blank" rel="noopener">${name}</a>`)
+      .join('');
+  }
+
+  app.querySelectorAll<HTMLLIElement>('.songs li').forEach((row) => row.classList.remove('playing'));
+  app.querySelectorAll<HTMLLIElement>('.songs li.playable')[index]?.classList.add('playing');
+
+  try {
+    const response = await fetch(`${API}/api/youtube?q=${term}`);
+    const body = (await response.json()) as { id: string | null };
+    showVideo(body.id, `https://www.youtube.com/results?search_query=${term}`);
+  } catch {
+    showVideo(null, `https://www.youtube.com/results?search_query=${term}`);
+  }
+};
+
 const render = (): void => {
   const lineup = state.lineup;
   const heading = lineup?.heading ?? (state.week === 'next' ? 'next week' : 'this week');
@@ -228,6 +293,7 @@ const render = (): void => {
 
       <section class="hero">
         <h1>${escape(cityName)},<br /><em>${escape(heading)}</em></h1>
+        ${state.lineup?.rows.length ? `<button type="button" class="playall" id="playall">&#9654; play all</button>` : ''}
         <p class="count">${
           state.status === 'loading'
             ? 'Looking for gigs&hellip;'
@@ -243,15 +309,9 @@ const render = (): void => {
       <div class="nowbar" id="nowbar" hidden>
         <span class="nowlabel" id="nowlabel"></span>
         <nav class="services" id="services" aria-label="Play this song elsewhere"></nav>
-        <iframe
-          id="yt"
-          title="YouTube player"
-          width="100%"
-          height="152"
-          frameborder="0"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowfullscreen
-        ></iframe>
+        <button type="button" class="closebar" id="closebar" aria-label="Close player">&times;</button>
+        <button type="button" class="nextsong" id="nextsong">next &#9654;</button>
+        <div id="yt"></div>
       </div>
 
       <section class="panel single">
@@ -310,57 +370,20 @@ const render = (): void => {
 
   renderSuggest();
 
-  const allSongs = (lineup?.rows ?? []).flatMap((gig) => gig.songs);
+  const tracks = (lineup?.rows ?? []).flatMap((gig) => gig.songs).filter((song) => !!song.title);
 
   app.querySelectorAll<HTMLLIElement>('.songs li.playable').forEach((row) => {
-    row.addEventListener('click', async () => {
-      const artist = row.dataset.artist ?? '';
-      const title = row.dataset.title ?? '';
-      const chosen = allSongs.find((song) => song.artist === artist && (song.title ?? '') === title);
-      if (!chosen?.title) return;
-
-      const frame = app.querySelector<HTMLIFrameElement>('#yt');
-      const bar = app.querySelector<HTMLElement>('#nowbar');
-      const labelEl = app.querySelector<HTMLElement>('#nowlabel');
-      if (bar) bar.hidden = false;
-      if (labelEl) labelEl.textContent = `${chosen.artist} \u2014 ${chosen.title ?? ''}`;
-
-      const query = `${chosen.artist} ${chosen.title ?? ''}`.trim();
-      const term = encodeURIComponent(query);
-      const searchUrl = `https://www.youtube.com/results?search_query=${term}`;
-
-      /* Each service is a search for the track: exact ids need their own APIs. */
-      const services = app.querySelector<HTMLElement>('#services');
-      if (services) {
-        const places = [
-          ['YouTube', `https://www.youtube.com/results?search_query=${term}`],
-          ['Spotify', `https://open.spotify.com/search/${term}`],
-          ['Apple Music', `https://music.apple.com/search?term=${term}`],
-          ['Deezer', `https://www.deezer.com/search/${term}`],
-          ['Bandcamp', `https://bandcamp.com/search?q=${term}`],
-        ];
-        services.innerHTML = places
-          .map(
-            ([name, href]) =>
-              `<a href="${href}" target="_blank" rel="noopener">${name}</a>`,
-          )
-          .join('');
-      }
-
-      /* The video id comes from the server, which reads YouTube's own results page. */
-      try {
-        const found = await fetch(`${API}/api/youtube?q=${encodeURIComponent(query)}`);
-        const body = (await found.json()) as { id: string | null };
-        if (frame) {
-          frame.src = body.id
-            ? `https://www.youtube.com/embed/${body.id}?autoplay=1&rel=0`
-            : searchUrl;
-        }
-      } catch {
-        if (frame) frame.src = searchUrl;
-      }
+    row.addEventListener('click', () => {
+      const index = tracks.findIndex(
+        (song) => song.artist === (row.dataset.artist ?? '') && (song.title ?? '') === (row.dataset.title ?? ''),
+      );
+      if (index >= 0) void playAt(index);
     });
   });
+
+  app.querySelector<HTMLButtonElement>('#playall')?.addEventListener('click', () => void playAt(0));
+  app.querySelector<HTMLButtonElement>('#closebar')?.addEventListener('click', () => stopPlaying());
+  app.querySelector<HTMLButtonElement>('#nextsong')?.addEventListener('click', () => void playAt(position + 1));
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {

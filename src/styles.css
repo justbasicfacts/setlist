@@ -1304,3 +1304,77 @@ html, body { overflow-x: hidden; }
   color: var(--lime);
   border-color: var(--lime);
 }
+
+
+/* ------------------------------------------------------- fixed mini player --- */
+
+.nowbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: block;
+  max-height: 62vh;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 16px 14px;
+  background: rgba(12, 12, 12, 0.97);
+  border-top: 1px solid var(--lime);
+  box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.5);
+}
+.nowbar[hidden] { display: none; }
+.nowbar > * { max-width: 900px; margin-left: auto; margin-right: auto; }
+.nowbar #yt { max-width: 900px; }
+
+.nowbar .closebar {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.nowbar .closebar:hover { color: var(--lime); }
+
+body { padding-bottom: 0; }
+
+.playall {
+  margin-right: 12px;
+  padding: 6px 14px;
+  border: 1px solid var(--lime);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--lime);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.playall:hover { background: var(--lime); color: var(--ink); }
+
+.gig .songs li.playing .artist { color: var(--lime); }
+
+.nowbar { top: auto; }
+.nowbar .nextsong {
+  position: absolute;
+  top: 6px;
+  right: 44px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.nowbar .nextsong:hover { color: var(--lime); border-color: var(--lime); }
+.nowbar .noembed { margin: 8px 0; font-size: 13px; color: var(--muted); }
+.nowbar .noembed a { color: var(--lime); }
