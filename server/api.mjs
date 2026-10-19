@@ -12,7 +12,8 @@
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const PORT = Number(process.env.API_PORT ?? 5181);
+/* Hosts set PORT; locally API_PORT keeps it out of the way of other tools. */
+const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 5181);
 const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
 const DEEZER = 'https://api.deezer.com';
@@ -347,10 +348,16 @@ const buildLineup = async (city, week) => {
 
 /* --------------------------------------------------------------------- http --- */
 
-const json = (response, status, body) => {
+const ORIGINS = ORIGIN.split(',').map((value) => value.trim()).filter(Boolean);
+
+const json = (response, status, body, request) => {
+  const origin = request?.headers?.origin ?? '';
+  const allowed = ORIGINS.includes('*') || ORIGINS.includes(origin) ? origin || ORIGINS[0] : ORIGINS[0];
+
   response.writeHead(status, {
     'content-type': 'application/json',
-    'access-control-allow-origin': ORIGIN,
+    'access-control-allow-origin': allowed,
+    'vary': 'origin',
     'cache-control': 'no-store',
   });
   response.end(JSON.stringify(body));
@@ -362,8 +369,8 @@ const server = createServer(async (request, response) => {
   try {
     if (url.pathname === '/api/cities') {
       const query = (url.searchParams.get('q') ?? '').trim();
-      if (query.length < 2) return json(response, 200, { cities: [] });
-      return json(response, 200, { cities: await findCities(query) });
+      if (query.length < 2) return json(response, 200, { cities: [] }, request);
+      return json(response, 200, { cities: await findCities(query) }, request);
     }
 
     if (url.pathname === '/api/lineup') {
@@ -372,7 +379,7 @@ const server = createServer(async (request, response) => {
       const lon = Number(url.searchParams.get('lon'));
       const week = url.searchParams.get('week') === 'next' ? 'next' : 'this';
       if (!name || Number.isNaN(lat) || Number.isNaN(lon)) {
-        return json(response, 400, { error: 'city, lat and lon are required' });
+        return json(response, 400, { error: 'city, lat and lon are required' }, request);
       }
 
       const city = {
@@ -382,16 +389,16 @@ const server = createServer(async (request, response) => {
         country: url.searchParams.get('country') ?? '',
         countryName: url.searchParams.get('countryName') ?? '',
       };
-      return json(response, 200, await buildLineup(city, week));
+      return json(response, 200, await buildLineup(city, week), request);
     }
 
     if (url.pathname === '/api/setup') {
-      return json(response, 200, { ticketmaster: !!TM_KEY, songs: 'deezer', cities: 'nominatim' });
+      return json(response, 200, { ticketmaster: !!TM_KEY, songs: 'deezer', cities: 'photon' }, request);
     }
 
-    json(response, 404, { error: 'nothing here' });
+    json(response, 404, { error: 'nothing here' }, request);
   } catch (failure) {
-    json(response, failure.code ?? 500, { error: failure.message ?? String(failure) });
+    json(response, failure.code ?? 500, { error: failure.message ?? String(failure) }, request);
   }
 });
 

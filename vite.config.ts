@@ -5,6 +5,8 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
 
   return {
+    /* A project site is served from /<repo>/, so the base has to be known at build. */
+    base: env.VITE_BASE || '/',
     server: {
       port: 5180,
       host: true,

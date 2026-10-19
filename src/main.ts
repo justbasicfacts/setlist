@@ -29,6 +29,9 @@ type Lineup = {
   empty?: boolean;
 };
 
+/** Where the API lives. Empty in development, the deployed URL in production. */
+const API = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('No #app to render into');
 
@@ -76,7 +79,7 @@ const findCities = async (query: string): Promise<void> => {
     return;
   }
   try {
-    const response = await fetch(`/api/cities?q=${encodeURIComponent(query.trim())}`);
+    const response = await fetch(`${API}/api/cities?q=${encodeURIComponent(query.trim())}`);
     const body = (await response.json()) as { cities: City[] };
     if (token !== search) return;
     state.cities = body.cities ?? [];
@@ -107,7 +110,7 @@ const load = async (): Promise<void> => {
   });
 
   try {
-    const response = await fetch(`/api/lineup?${params.toString()}`);
+    const response = await fetch(`${API}/api/lineup?${params.toString()}`);
     const body = (await response.json()) as Lineup & { error?: string };
     if (token !== run) return;
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
@@ -320,7 +323,7 @@ const render = (): void => {
 
 void (async () => {
   const berlin: City = { name: 'Berlin', country: 'DE', countryName: 'Germany', region: 'Berlin', lat: 52.5170365, lon: 13.3888599 };
-  const response = await fetch('/api/cities?q=Berlin').catch(() => null);
+  const response = await fetch(`${API}/api/cities?q=Berlin`).catch(() => null);
   if (response?.ok) {
     const body = (await response.json()) as { cities: City[] };
     pick(body.cities?.[0] ?? berlin);
