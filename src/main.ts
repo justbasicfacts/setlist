@@ -27,7 +27,6 @@ type Lineup = {
   events: number;
   rows: Gig[];
   note?: string;
-  invented?: boolean;
   empty?: boolean;
 };
 
@@ -321,8 +320,6 @@ const render = (): void => {
         </div>
         <span class="dates">${escape(lineup?.label ?? '')}</span>
       </section>
-
-      ${lineup?.invented ? `<p class="invented">Invented lineup. Nothing is actually on in ${escape(lineup.city.name)} this week, so every act and venue below is made up for fun. Do not go to these.</p>` : ''}
 
       <section class="hero">
         <h1>${escape(cityName)},<br /><em>${escape(heading)}</em></h1>

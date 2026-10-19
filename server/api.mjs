@@ -432,41 +432,11 @@ const buildLineup = async (city, week) => {
     songs: event.artists.map((artist) => ({ artist, ...(songs[artist] ?? { title: null }) })),
   }));
 
-  /* No listings anywhere: an invented lineup, labelled as one. Built into rows, which
-     are already assembled by this point. */
-  if (rows.length === 0) {
-    const openers = ['The', 'Los', 'DJ', 'Sons of', 'Hotel', 'Radio'];
-    const things = ['Neon', 'Velvet', 'Concrete', 'Midnight', 'Static', 'Paper', 'Iron', 'Sunday'];
-    const endings = ['Choir', 'Tigers', 'Union', 'Orchestra', 'Sisters', 'Machine', 'Riot', 'Quartet'];
-    const venues = ['Backroom', 'The Basement', 'Kiosk 4', 'Old Tram Depot', 'Community Hall', 'Loading Dock'];
-    const pick = (list, index) => list[index % list.length];
-
-    for (let index = 0; index < 8; index += 1) {
-      const name = `${pick(openers, index * 3)} ${pick(things, index * 5 + 1)} ${pick(endings, index * 7 + 2)}`;
-      const when = new Date(`${start}T12:00:00`);
-      when.setDate(when.getDate() + (index % 7));
-
-      rows.push({
-        date: when.toISOString().slice(0, 10),
-        day: when.toLocaleDateString('en-GB', { weekday: 'short' }),
-        venue: pick(venues, index * 4 + 3),
-        district: city.name,
-        time: '20:00',
-        artists: [name],
-        songs: [{ artist: name, title: null }],
-        away: 0,
-        sameCity: true,
-        source: 'invented',
-      });
-    }
-  }
-
   const result = {
-    invented: rows[0]?.source === 'invented' || undefined,
     /* Say why a city is empty, rather than leaving a blank page. */
     note:
-      rows.length === 0 || rows[0]?.source === 'invented'
-        ? 'No listings for this city, so this lineup is invented. Every name below is made up.'
+      rows.length === 0
+        ? 'Ticketmaster has no listings for this country yet. Its coverage stops short of places like Hungary and Latvia, and no other source is wired in.'
         : undefined,
     city: { name: city.name, country: city.country, countryName: city.countryName, lat: city.lat, lon: city.lon },
     week,
