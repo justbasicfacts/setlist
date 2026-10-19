@@ -24,10 +24,17 @@ const readSources = () => {
   }
 };
 
+/** Lower case, no accents. Written with explicit ranges: property escapes are not
+    available in every Node the host might run. */
 const fold = (value) =>
   String(value ?? '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u1ab0-\u1aff\u1dc0-\u1dff]/g, '')
+    .replace(/[āáàâäãå]/g, 'a')
+    .replace(/[ēéèêë]/g, 'e')
+    .replace(/[īíìîï]/g, 'i')
+    .replace(/[ōóòôöõ]/g, 'o')
+    .replace(/[ūúùûü]/g, 'u')
     .toLowerCase()
     .trim();
 
@@ -89,7 +96,10 @@ const SONGKICK_IDS = {
 
 const songkickEvents = async (city, range, memory, key, ttl) => {
   const slug = fold(city.name);
-  const metro = SONGKICK_IDS[slug];
+  /* Match the seeded ids however the name arrives, accents included. */
+  const metro =
+    SONGKICK_IDS[slug] ??
+    Object.entries(SONGKICK_IDS).find(([known]) => slug.startsWith(known) || known.startsWith(slug))?.[1];
   if (!metro) return [];
 
   const cacheKey = `songkick|${key}`;
