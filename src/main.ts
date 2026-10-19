@@ -186,22 +186,51 @@ const pick = (city: City): void => {
 let queue: Song[] = [];
 let position = -1;
 
-/** The frame is rebuilt per song: it is the one way that works without the JS API. */
+let frame: HTMLIFrameElement | null = null;
+
+/** The frame, with the API channel open so it reports when a video ends. */
 const showVideo = (id: string | null, searchUrl: string): void => {
   const host = app.querySelector<HTMLElement>('#yt');
   if (!host) return;
 
-  host.innerHTML = id
-    ? `<iframe title="YouTube player" width="100%" height="152" frameborder="0"
-         src="https://www.youtube.com/embed/${id}?autoplay=1&rel=0"
-         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-         allowfullscreen></iframe>`
-    : `<p class="noembed">No video found. <a href="${searchUrl}" target="_blank" rel="noopener">Search YouTube</a>.</p>`;
+  if (!id) {
+    host.innerHTML = `<p class="noembed">No video found. <a href="${searchUrl}" target="_blank" rel="noopener">Search YouTube</a>.</p>`;
+    frame = null;
+    return;
+  }
+
+  host.innerHTML = '';
+  const element = document.createElement('iframe');
+  element.title = 'YouTube player';
+  element.width = '100%';
+  element.height = '152';
+  element.allow = 'autoplay; encrypted-media; picture-in-picture';
+  element.setAttribute('allowfullscreen', '');
+  element.src = `https://www.youtube.com/embed/${id}?enablejsapi=1&autoplay=1&rel=0&origin=${encodeURIComponent(window.location.origin)}`;
+  host.append(element);
+  frame = element;
+
+  /* Ask the player to report state changes; this is what the JS api does internally. */
+  element.addEventListener('load', () => {
+    element.contentWindow?.postMessage(JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }), '*');
+  });
 };
+
+/* playerState 0 means the video ended. */
+window.addEventListener('message', (event: MessageEvent) => {
+  if (!String(event.origin).includes('youtube.com')) return;
+  try {
+    const data = JSON.parse(String(event.data)) as { info?: { playerState?: number } };
+    if (data?.info?.playerState === 0) void playAt(position + 1);
+  } catch {
+    /* not a player message */
+  }
+});
 
 const stopPlaying = (): void => {
   const host = app.querySelector<HTMLElement>('#yt');
   if (host) host.innerHTML = '';
+  frame = null;
   const bar = app.querySelector<HTMLElement>('#nowbar');
   if (bar) bar.hidden = true;
   app.querySelectorAll<HTMLLIElement>('.songs li').forEach((row) => row.classList.remove('playing'));
