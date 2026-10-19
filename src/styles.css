@@ -723,3 +723,26 @@ main {
 .tracks.selectable li.playing .play {
   color: var(--lime);
 }
+
+
+.shuffle.primary {
+  background: var(--lime);
+  color: var(--ink);
+  border-color: var(--lime);
+}
+
+.shuffle.primary:hover {
+  background: transparent;
+  color: var(--lime);
+}
+
+.howto {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.howto a {
+  color: var(--lime);
+}

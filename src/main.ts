@@ -44,7 +44,7 @@ const state: {
   status: 'loading' | 'ok' | 'error';
   message: string;
   current: number;
-  copied: boolean;
+  copied: 'tracks' | 'link' | null;
 } = {
   city: 'Berlin',
   week: 'this',
@@ -52,7 +52,7 @@ const state: {
   status: 'loading',
   message: '',
   current: 0,
-  copied: false,
+  copied: null,
 };
 
 const escape = (value: string): string =>
@@ -132,21 +132,45 @@ const playlistLink = (): string => {
   return url.toString();
 };
 
-const copyList = async (): Promise<void> => {
+/** Clipboard with a fallback, because a refused write should not lose the list. */
+const copyText = async (text: string): Promise<boolean> => {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    const copied = document.execCommand('copy');
+    area.remove();
+    return copied;
+  }
+};
+
+const copy = async (what: 'tracks' | 'link'): Promise<void> => {
   const tracks = state.lineup?.tracks ?? [];
   if (tracks.length === 0) return;
-  try {
-    await navigator.clipboard.writeText(playlistLink());
-    state.copied = true;
+
+  /* Spotify cannot read a playlist file, so the list is copied as text it can import. */
+  const text =
+    what === 'link' ? playlistLink() : tracks.map((track) => `${track.artist} - ${track.title}`).join('\n');
+
+  const copied = await copyText(text);
+  if (!copied) {
+    state.message = 'The clipboard refused. Open the playlist link and copy the rows by hand.';
     render();
-    window.setTimeout(() => {
-      state.copied = false;
-      render();
-    }, 2000);
-  } catch {
-    state.message = 'The clipboard refused. Select the list instead.';
-    render();
+    return;
   }
+
+  state.copied = what;
+  render();
+  window.setTimeout(() => {
+    state.copied = null;
+    render();
+  }, 4000);
 };
 
 const render = (): void => {
@@ -210,13 +234,20 @@ const render = (): void => {
                          <p id="meta" class="sub">${escape([playing.album, '30 second preview'].filter(Boolean).join(' · '))}</p>
                        </div>
                        <div class="player-actions">
-                         <a class="shuffle" id="open" href="${escape(playing.url)}" target="_blank" rel="noopener">Deezer</a>
-                         <a class="shuffle" id="spotify" href="${escape(playing.spotify)}" target="_blank" rel="noopener">Find on Spotify</a>
-                         <a class="shuffle" id="m3u" href="/api/playlist.m3u?city=${encodeURIComponent(state.city)}&week=${state.week}">Playlist file</a>
-                         <button type="button" class="shuffle" id="copy">${state.copied ? 'Link copied' : 'Copy link'}</button>
+                         <button type="button" class="shuffle primary" id="tracks">${state.copied === 'tracks' ? 'Copied' : 'Send to Spotify'}</button>
+                         <button type="button" class="shuffle" id="link">${state.copied === 'link' ? 'Link copied' : 'Playlist link'}</button>
+                         <a class="shuffle" id="m3u" href="/api/playlist.m3u?city=${encodeURIComponent(state.city)}&week=${state.week}">For VLC</a>
                        </div>
                      </div>
                      <audio id="audio" controls preload="none" src="${escape(playing.preview)}"></audio>
+                     ${
+                       state.copied === 'tracks'
+                         ? `<p class="howto">Copied ${tracks.length} tracks. Now paste it at
+                              <a href="https://www.tunemymusic.com/" target="_blank" rel="noopener">TuneMyMusic</a>,
+                              pick Spotify as the destination, and it becomes a real playlist. Netflix-style
+                              one-time faff, no approval for this site.</p>`
+                         : ''
+                     }
                    </div>
                    <ol class="tracks selectable">
                      ${tracks
@@ -261,7 +292,8 @@ const render = (): void => {
     row.addEventListener('click', () => play(Number(row.dataset.index ?? '0')));
   });
 
-  app.querySelector<HTMLButtonElement>('#copy')?.addEventListener('click', () => void copyList());
+  app.querySelector<HTMLButtonElement>('#tracks')?.addEventListener('click', () => void copy('tracks'));
+  app.querySelector<HTMLButtonElement>('#link')?.addEventListener('click', () => void copy('link'));
 };
 
 /* A shared link carries the city and week with it. */
