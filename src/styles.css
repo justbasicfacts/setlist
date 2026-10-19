@@ -1448,3 +1448,18 @@ body { padding-bottom: 0; }
   width: fit-content;
   margin: 6px 0 18px;
 }
+
+/* buttons take their own row: a label can never end up under them */
+.nowbar .barbuttons {
+  position: static;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.nowbar .nowlabel {
+  padding-right: 0;
+}
+.nowbar.collapsed .nowlabel {
+  padding-right: 0;
+}
