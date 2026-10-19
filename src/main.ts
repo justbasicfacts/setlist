@@ -242,7 +242,7 @@ const render = (): void => {
 
       <div class="nowbar" id="nowbar" hidden>
         <span class="nowlabel" id="nowlabel"></span>
-        <a class="ytlink" id="ytlink" href="https://www.youtube.com/" target="_blank" rel="noopener">open on YouTube</a>
+        <nav class="services" id="services" aria-label="Play this song elsewhere"></nav>
         <iframe
           id="yt"
           title="YouTube player"
@@ -326,9 +326,26 @@ const render = (): void => {
       if (labelEl) labelEl.textContent = `${chosen.artist} \u2014 ${chosen.title ?? ''}`;
 
       const query = `${chosen.artist} ${chosen.title ?? ''}`.trim();
-      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-      const link = app.querySelector<HTMLAnchorElement>('#ytlink');
-      if (link) link.href = searchUrl;
+      const term = encodeURIComponent(query);
+      const searchUrl = `https://www.youtube.com/results?search_query=${term}`;
+
+      /* Each service is a search for the track: exact ids need their own APIs. */
+      const services = app.querySelector<HTMLElement>('#services');
+      if (services) {
+        const places = [
+          ['YouTube', `https://www.youtube.com/results?search_query=${term}`],
+          ['Spotify', `https://open.spotify.com/search/${term}`],
+          ['Apple Music', `https://music.apple.com/search?term=${term}`],
+          ['Deezer', `https://www.deezer.com/search/${term}`],
+          ['Bandcamp', `https://bandcamp.com/search?q=${term}`],
+        ];
+        services.innerHTML = places
+          .map(
+            ([name, href]) =>
+              `<a href="${href}" target="_blank" rel="noopener">${name}</a>`,
+          )
+          .join('');
+      }
 
       /* The video id comes from the server, which reads YouTube's own results page. */
       try {
