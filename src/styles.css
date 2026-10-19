@@ -570,3 +570,71 @@ main {
 .setup-link:hover {
   color: var(--lime);
 }
+
+
+/* ------------------------------------------------------------------ player --- */
+
+.player {
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px dashed var(--lime);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.player-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.player-top #now {
+  margin: 0;
+  font-size: 14px;
+}
+
+.player-top #now b {
+  font-family: 'Archivo Black', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.player-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.player iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+}
+
+.tracks.selectable li {
+  cursor: pointer;
+  grid-template-columns: 34px 1fr 18px;
+}
+
+.tracks.selectable li:hover {
+  border-color: rgba(196, 255, 61, 0.5);
+}
+
+.tracks.selectable li.playing {
+  border-color: var(--lime);
+  background: rgba(196, 255, 61, 0.06);
+}
+
+.tracks.selectable li .play {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tracks.selectable li:hover .play,
+.tracks.selectable li.playing .play {
+  color: var(--lime);
+}

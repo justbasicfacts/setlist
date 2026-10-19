@@ -16,7 +16,7 @@ const start = (label, command, args) => {
   return child;
 };
 
-const api = start('api', process.execPath, ['--env-file-if-exists=.env', 'server/token.mjs']);
+const api = start('api', process.execPath, ['--env-file-if-exists=.env', 'server/api.mjs']);
 const site = start('site', 'npx', ['vite']);
 
 const stop = () => {
