@@ -1,0 +1,3 @@
+minimumReleaseAgeExclude:
+  - '@justbasicfacts/lit-ui-react@0.4.4'
+  - '@justbasicfacts/lit-ui@0.7.2'

@@ -1,0 +1,33 @@
+{
+  "name": "setlist",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --port 4180",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@justbasicfacts/lit-ui": "0.7.2",
+    "@justbasicfacts/lit-ui-react": "0.4.4",
+    "@justbasicfacts/tokens": "0.5.1",
+    "@lit/react": "^1.0.8",
+    "lit": "^3.3.1",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.3",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7"
+  }
+}

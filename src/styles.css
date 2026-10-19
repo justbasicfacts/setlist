@@ -1,0 +1,66 @@
+/*
+ * Layout only. Colours, radii, fonts and spacing come from the theme, so switching
+ * mode in the app bar restyles the page and the components together.
+ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--ui-font, 'Roboto Condensed', system-ui, sans-serif);
+  background: var(--ui-color-bg-default);
+  color: var(--ui-color-text);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* The app bar is the library's; this only pins the row's ends and its hairline. */
+.topbar {
+  border-bottom: 1px solid var(--ui-color-divider);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+
+.page {
+  padding-top: 28px;
+  padding-bottom: 72px;
+}
+
+/* Rows inside ui-list-item: a number, the text, and the action slot. */
+.row-index {
+  flex: 0 0 26px;
+  font-size: 13px;
+  color: var(--ui-color-text-secondary);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.field {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+@media (max-width: 600px) {
+  .page {
+    padding-top: 20px;
+    padding-bottom: 56px;
+  }
+}
