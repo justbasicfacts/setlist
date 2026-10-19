@@ -261,31 +261,42 @@ const artistsIn = (events) => [...new Set(events.flatMap((event) => event.artist
 
 /* --------------------------------------------------------------- last.fm --- */
 
+/** Why Last.fm gave nothing, so the page can say it instead of shrugging. */
+let lastFmError = '';
+
 /** Last.fm's events for a place: the fallback where Ticketmaster has no listings. */
 const lastFmEvents = async (city, week) => {
   if (!LASTFM_KEY) return [];
 
   const { start, end } = weekRange(week);
+  /* No date parameters here: geo.getEvents does not take them, so the week is filtered below. */
   const params = new URLSearchParams({
     method: 'geo.getEvents',
     location: city.name,
     api_key: LASTFM_KEY,
     format: 'json',
     limit: '100',
-    datefrom: start,
-    dateto: end,
   });
 
   try {
     const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params.toString()}`, {
       signal: AbortSignal.timeout(15_000),
     });
-    if (!response.ok) return [];
     const body = await response.json();
+    if (!response.ok || body.error) {
+      lastFmError = String(body.message ?? `HTTP ${response.status}`);
+      return [];
+    }
+    lastFmError = '';
+
     const list = body.events?.event ?? [];
     const events = Array.isArray(list) ? list : [list];
+    const inWeek = events.filter((event) => {
+      const day = event.startDate ? new Date(Number(event.startDate) * 1000).toISOString().slice(0, 10) : '';
+      return day >= start && day <= end;
+    });
 
-    return events.map((event) => {
+    return inWeek.map((event) => {
       const date = event.startDate ? new Date(Number(event.startDate) * 1000) : null;
       const artists = (event.artists?.artist ?? [])
         .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
@@ -426,7 +437,9 @@ const buildLineup = async (city, week) => {
     note:
       rows.length === 0
         ? LASTFM_KEY
-          ? 'No listings from any source for this week.'
+          ? lastFmError
+            ? `Ticketmaster has no listings here and Last.fm refused the key: ${lastFmError}`
+            : 'No listings from any source for this week.'
           : 'Ticketmaster has no listings here. A free LASTFM_API_KEY adds a second source.'
         : undefined,
     city: { name: city.name, country: city.country, countryName: city.countryName, lat: city.lat, lon: city.lon },
