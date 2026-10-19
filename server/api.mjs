@@ -391,7 +391,9 @@ const lineups = new Map(Object.entries(readJson(LINEUP_FILE, {})));
 const buildLineup = async (city, week) => {
   const key = `${city.lat},${city.lon}|${weekRange(week).start}`;
   const cached = lineups.get(key);
-  if (cached) return { ...cached, cached: true };
+  /* Never serve a cached invented lineup, even if an older build wrote one. */
+  if (cached && cached.rows?.[0]?.source !== 'invented') return { ...cached, cached: true };
+  if (cached) lineups.delete(key);
 
   /* Anything whose venue is more than 30 km away is not "in town". */
   /*
