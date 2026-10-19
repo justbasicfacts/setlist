@@ -1,12 +1,14 @@
 import {
+  buildPlaylist,
   CITIES,
   fetchEvents,
   hasKey,
-  playlistFrom,
+  spotifyReady,
   weekHeading,
   weekRange,
   type Event,
   type Source,
+  type Track,
   type Week,
 } from './events';
 import './styles.css';
@@ -22,6 +24,7 @@ if (!app) throw new Error('No #app to render into');
 let city = 'Berlin';
 let week: Week = 'this';
 let events: Event[] = [];
+let tracks: Track[] = [];
 let source: Source = 'sample';
 let problem = '';
 let loading = true;
@@ -36,22 +39,31 @@ const load = async (): Promise<void> => {
   problem = '';
   render();
 
-  const result = await fetchEvents(city, week);
+  const found = await fetchEvents(city, week);
+  const listed = await buildPlaylist(found.events);
   if (token !== requestId) return; /* a newer choice has already been made */
 
-  events = result.events;
-  source = result.source;
-  problem = result.problem ?? '';
+  events = found.events;
+  tracks = listed;
+  source = found.source;
+  problem = found.problem ?? '';
   loading = false;
   render();
 };
 
 const render = (): void => {
-  const tracks = playlistFrom(events);
   const venues = new Set(events.map((event) => event.venue)).size;
   const artists = new Set(events.flatMap((event) => event.artists)).size;
+  const fromSpotify = tracks.filter((track) => track.fromSpotify).length;
+
   const sourceLabel =
-    source === 'ticketmaster' ? 'live from Ticketmaster' : hasKey ? 'sample lineups' : 'sample lineups - no API key';
+    source === 'ticketmaster'
+      ? 'live from Ticketmaster'
+      : hasKey
+        ? 'sample lineups'
+        : 'sample lineups - no API key';
+
+  const titlesLabel = fromSpotify > 0 ? 'titles from Spotify' : 'invented titles';
 
   app.innerHTML = `
     <header class="bar">
@@ -95,11 +107,12 @@ const render = (): void => {
           So when someone asks if you have heard of them, you can say yes and mean it.
         </p>
         ${problem ? `<p class="problem">${escape(problem)}</p>` : ''}
+        ${!spotifyReady ? `<p class="problem">Spotify credentials are not set, so the titles are invented. See .env.example.</p>` : ''}
       </section>
 
       <section class="split">
         <div class="panel">
-          <h2>The playlist <span class="hint">generated, not curated</span></h2>
+          <h2>The playlist <span class="hint">generated, not curated &middot; ${escape(titlesLabel)}</span></h2>
           ${
             loading
               ? `<p class="empty">Hold on&hellip;<br /><span>asking around.</span></p>`
@@ -111,7 +124,14 @@ const render = (): void => {
                         (track, index) => `
                       <li>
                         <span class="n">${String(index + 1).padStart(2, '0')}</span>
-                        <span class="t"><b>${escape(track.title)}</b><span class="a">${escape(track.artist)}</span></span>
+                        <span class="t">
+                          ${
+                            track.url
+                              ? `<b><a href="${escape(track.url)}" target="_blank" rel="noopener">${escape(track.title)}</a></b>`
+                              : `<b>${escape(track.title)}</b>`
+                          }
+                          <span class="a">${escape(track.artist)}</span>
+                        </span>
                         <span class="src">${escape(track.event.venue)} &middot; ${escape(track.event.day)}</span>
                       </li>`,
                       )
@@ -136,6 +156,7 @@ const render = (): void => {
           </ul>
           <p class="aside">
             ${source === 'ticketmaster' ? 'Lineups from the Ticketmaster Discovery API.' : 'Invented lineups, standing in for the real listings.'}
+            ${fromSpotify > 0 ? ` ${fromSpotify} of ${tracks.length} titles came back from Spotify.` : ''}
           </p>
         </div>
       </section>

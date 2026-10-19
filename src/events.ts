@@ -1,10 +1,13 @@
 /**
- * Where the gigs come from.
+ * Where the gigs and the songs come from.
  *
- * With a Ticketmaster key in the environment, a week's events in a city are fetched
- * from the Discovery API; without one, a seeded sample pool stands in, so the app
- * works before anybody has signed up for anything. Either way the playlist is derived
- * the same way: one track per artist playing, in gig order.
+ * Gigs: the Ticketmaster Discovery API, for one city and one local week. Songs: one
+ * per artist playing, looked up on Spotify. Both need credentials; both fall back
+ * honestly, so the page works before anyone signs up for anything and says which
+ * source it used.
+ *
+ * The Spotify lookup goes through `/api/spotify-token`, a route the dev server owns,
+ * because a client secret must never be in a browser bundle.
  */
 
 export type Week = 'this' | 'next';
@@ -20,16 +23,20 @@ export type Event = {
 export type Track = {
   artist: string;
   title: string;
+  url?: string;
+  fromSpotify: boolean;
   event: Event;
 };
 
 export type Source = 'ticketmaster' | 'sample';
 
-const KEY = (import.meta.env.VITE_TICKETMASTER_KEY as string | undefined)?.trim() ?? '';
+const KEY = typeof __TICKETMASTER_KEY__ === 'string' ? __TICKETMASTER_KEY__.trim() : '';
+const SPOTIFY_READY = typeof __SPOTIFY_READY__ === 'boolean' ? __SPOTIFY_READY__ : false;
 
 export const hasKey = KEY.length > 0;
+export const spotifyReady = SPOTIFY_READY;
 
-/* A made-up catalogue: artist -> the one song we would put on the playlist. */
+/* Titles to fall back on when Spotify cannot be asked. One per artist we seed. */
 const CATALOGUE: Record<string, string> = {
   'Lera Lynn': 'What Is This Body?',
   Egg: 'Germs',
@@ -40,7 +47,7 @@ const CATALOGUE: Record<string, string> = {
   'RÜFÜS DU SOL': 'Innerbloom',
   'Tame Impala': 'The Less I Know The Better',
   'M83': 'Midnight City',
-  'Caroline Polachek': 'So Hot You\'re Hurting My Feelings',
+  'Caroline Polachek': "So Hot You're Hurting My Feelings",
   'Big Thief': 'Vampire Empire',
   'Fontaines D.C.': 'Starburster',
   'Little Simz': 'Mood Swings',
@@ -161,18 +168,13 @@ const toEvent = (raw: TmEvent, city: string): Event | null => {
 
 /**
  * A local calendar day. `toISOString()` would convert to UTC first, which turns
- * Monday 00:00 in Berlin into Sunday 22:00 and sends the wrong week to the API.
+ * Monday 00:00 in Berlin into Sunday 22:00 and asks for the wrong week.
  */
 const isoDay = (date: Date): string => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
 };
 
-/**
- * The week's gigs in a city. Falls back to the sample pool when there is no key,
- * when the request fails, or when the city has nothing listed: a playlist page with
- * an empty state on a first visit is a worse demo than an honest sample.
- */
 export const fetchEvents = async (
   city: string,
   week: Week,
@@ -220,22 +222,98 @@ export const fetchEvents = async (
   }
 };
 
-/* ------------------------------------------------------------ playlist --- */
+/* ------------------------------------------------------------ Spotify --- */
+
+type Resolved = { title: string; url?: string; fromSpotify: boolean };
+
+const resolved = new Map<string, Resolved>();
+
+let token: { value: string; expires: number } | null = null;
+let inFlight: Promise<string | null> | null = null;
+
+const requestToken = async (): Promise<string | null> => {
+  try {
+    const response = await fetch('/api/spotify-token');
+    if (!response.ok) return null;
+    const body = (await response.json()) as { access_token?: string; expires_in?: number };
+    if (!body.access_token) return null;
+    token = { value: body.access_token, expires: Date.now() + (body.expires_in ?? 3600) * 1000 };
+    return token.value;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * One token for the whole page. The lookups run in parallel, so without memoising the
+ * in-flight promise every artist asks for its own token: three artists, three requests.
+ */
+const spotifyToken = (): Promise<string | null> => {
+  if (!SPOTIFY_READY) return Promise.resolve(null);
+  if (token && token.expires > Date.now() + 30_000) return Promise.resolve(token.value);
+  if (!inFlight) {
+    inFlight = requestToken().finally(() => {
+      inFlight = null;
+    });
+  }
+  return inFlight;
+};
+
+/** The artist's most popular track, or the built-in title when Spotify is silent. */
+const resolveTrack = async (artist: string): Promise<Resolved> => {
+  const cached = resolved.get(artist);
+  if (cached) return cached;
+
+  const fallback: Resolved = {
+    title: CATALOGUE[artist] ?? 'Untitled banger (we checked, it is fine)',
+    fromSpotify: false,
+  };
+
+  const bearer = await spotifyToken();
+  if (!bearer) return fallback;
+
+  try {
+    const params = new URLSearchParams({ q: `artist:"${artist}"`, type: 'track', limit: '1' });
+    const response = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+    if (!response.ok) return fallback;
+
+    const body = (await response.json()) as {
+      tracks?: { items?: { name?: string; external_urls?: { spotify?: string } }[] };
+    };
+    const item = body.tracks?.items?.[0];
+    if (!item?.name) return fallback;
+
+    const found: Resolved = {
+      title: item.name,
+      url: item.external_urls?.spotify,
+      fromSpotify: true,
+    };
+    resolved.set(artist, found);
+    return found;
+  } catch {
+    return fallback;
+  }
+};
 
 /** One track per artist playing, in gig order, with the gig as the reason. */
-export const playlistFrom = (events: Event[]): Track[] => {
-  const seen = new Set<string>();
+export const buildPlaylist = async (events: Event[]): Promise<Track[]> => {
+  const artists = [...new Set(events.flatMap((event) => event.artists))];
+  await Promise.all(artists.map((artist) => resolveTrack(artist)));
+
   const tracks: Track[] = [];
+  const seen = new Set<string>();
 
   for (const event of events) {
     for (const artist of event.artists) {
       if (seen.has(artist)) continue;
       seen.add(artist);
-      tracks.push({
-        artist,
+      const info = resolved.get(artist) ?? {
         title: CATALOGUE[artist] ?? 'Untitled banger (we checked, it is fine)',
-        event,
-      });
+        fromSpotify: false,
+      };
+      tracks.push({ artist, ...info, event });
     }
   }
 
