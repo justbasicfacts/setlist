@@ -15,14 +15,26 @@
 
 import { createServer } from 'node:http';
 import { readFileSync, writeFileSync } from 'node:fs';
+import { randomBytes, createHash } from 'node:crypto';
 
 const PORT = Number(process.env.API_PORT ?? 5181);
 const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
+const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID ?? '';
+const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET ?? '';
 const DEEZER = process.env.DEEZER_API_BASE ?? 'https://api.deezer.com';
 
 export const CITIES = ['Berlin', 'London', 'Amsterdam', 'Dublin'];
 const COUNTRY = { berlin: 'DE', london: 'GB', amsterdam: 'NL', dublin: 'IE' };
+
+const SPOTIFY = process.env.SPOTIFY_API_BASE ?? 'https://api.spotify.com/v1';
+const ACCOUNTS = process.env.SPOTIFY_ACCOUNTS_BASE ?? 'https://accounts.spotify.com';
+const REDIRECT = process.env.SPOTIFY_REDIRECT ?? `http://localhost:${PORT}/callback`;
+const SCOPES = 'playlist-modify-public user-read-private';
+
+const AUTH_FILE = new URL('.spotify.json', import.meta.url).pathname;
+const VERIFIER_FILE = new URL('.verifier.json', import.meta.url).pathname;
+const SPOTIFY_FILE = new URL('.spotify-playlists.json', import.meta.url).pathname;
 
 const LINEUP_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
 const ARTIST_FILE = new URL('.artist-cache.json', import.meta.url).pathname;
@@ -173,6 +185,142 @@ const trackFor = async (artist) => {
   return found;
 };
 
+/* ------------------------------------------------------------------ spotify --- */
+
+let userToken = { token: '', expires: 0, id: '', name: '' };
+
+const authorised = () => {
+  try {
+    return !!JSON.parse(readFileSync(AUTH_FILE, 'utf8')).refresh_token;
+  } catch {
+    return false;
+  }
+};
+
+const accountRequest = async (body) => {
+  const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
+  const response = await fetch(`${ACCOUNTS}/api/token`, {
+    method: 'POST',
+    headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(body).toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const json = await response.json();
+  if (!response.ok) throw new Error(json.error_description ?? `token ${response.status}`);
+  return json;
+};
+
+/** A token for the authorised account, refreshed silently. */
+const accountToken = async () => {
+  if (userToken.token && userToken.expires > Date.now() + 60_000) return userToken;
+  const stored = readJson(AUTH_FILE, {});
+  if (!stored.refresh_token) throw Object.assign(new Error('not connected'), { code: 401 });
+
+  const token = await accountRequest({ grant_type: 'refresh_token', refresh_token: stored.refresh_token });
+  if (token.refresh_token && token.refresh_token !== stored.refresh_token) {
+    writeJson(AUTH_FILE, { refresh_token: token.refresh_token });
+  }
+  const me = await spotifyWrite(token.access_token, '/me');
+  userToken = { token: token.access_token, expires: Date.now() + token.expires_in * 1000, id: me.id, name: me.display_name ?? 'you' };
+  return userToken;
+};
+
+const spotifyWrite = async (token, path, init) => {
+  const response = await fetch(`${SPOTIFY}${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw Object.assign(new Error(`Spotify ${path} answered ${response.status}: ${detail.slice(0, 100)}`), {
+      code: response.status,
+    });
+  }
+  return response.json();
+};
+
+/** Spotify track uris for the lineup, in gig order. */
+const spotifyUris = async (token, artists) => {
+  const uris = [];
+  for (const artist of artists) {
+    try {
+      const params = new URLSearchParams({ q: `artist:"${artist}"`, type: 'track', limit: '3' });
+      const body = await spotifyWrite(token, `/search?${params.toString()}`);
+      const wanted = artist.trim().toLowerCase();
+
+      for (const item of body.tracks?.items ?? []) {
+        const credits = (item.artists ?? []).map((entry) => entry.name?.trim().toLowerCase()).filter(Boolean);
+        const agrees = credits.some((name) => name === wanted || name.includes(wanted) || wanted.includes(name));
+        if (agrees && item.uri) {
+          uris.push(item.uri);
+          break;
+        }
+      }
+    } catch (failure) {
+      if (failure.code === 429) throw failure;
+      /* one awkward artist is not the whole playlist */
+    }
+  }
+  return uris;
+};
+
+const spotifyPlaylists = readJson(SPOTIFY_FILE, {});
+
+/**
+ * The playlist in the authorised account: reused when Spotify still has it, created
+ * once otherwise. Kept per city and week, so selecting a city again writes nothing.
+ */
+const ensureSpotifyPlaylist = async (city, week, data) => {
+  if (!authorised()) return null;
+
+  const key = `${city.toLowerCase()}|${data.start}`;
+  const known = spotifyPlaylists[key];
+
+  try {
+    const { token } = await accountToken();
+
+    if (known?.id) {
+      try {
+        await spotifyWrite(token, `/playlists/${known.id}`);
+        return { ...known, reused: true };
+      } catch {
+        /* deleted, or not ours any more */
+      }
+    }
+
+    const artists = artistsIn(data.eventsList ?? []);
+    const uris = await spotifyUris(token, artists);
+    if (uris.length === 0) return known ?? null;
+
+    const created = await spotifyWrite(token, `/users/${encodeURIComponent(userToken.id)}/playlists`, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: `${city} · ${weekHeading(week)} · ${data.label}`,
+        description: `Whoever is playing in ${city} ${weekHeading(week)}. Generated, not curated.`,
+        public: true,
+      }),
+    });
+
+    await spotifyWrite(token, `/playlists/${created.id}/tracks`, {
+      method: 'POST',
+      body: JSON.stringify({ uris: uris.slice(0, 100) }),
+    });
+
+    const record = {
+      id: created.id,
+      url: created.external_urls?.spotify ?? `https://open.spotify.com/playlist/${created.id}`,
+      embed: `https://open.spotify.com/embed/playlist/${created.id}`,
+      count: uris.length,
+    };
+    spotifyPlaylists[key] = record;
+    writeJson(SPOTIFY_FILE, spotifyPlaylists);
+    return { ...record, reused: false };
+  } catch {
+    return known ?? null;
+  }
+};
+
 /* ------------------------------------------------------------------- lineup --- */
 
 const lineups = new Map(Object.entries(readJson(LINEUP_FILE, {})));
@@ -232,8 +380,56 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? '/', `http://localhost:${PORT}`);
 
   try {
+    if (url.pathname === '/auth') {
+      if (!CLIENT_ID) return json(response, 501, { error: 'SPOTIFY_CLIENT_ID is not set' });
+      const verifier = randomBytes(48).toString('base64url');
+      writeJson(VERIFIER_FILE, { verifier });
+      const params = new URLSearchParams({
+        client_id: CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: REDIRECT,
+        scope: SCOPES,
+        code_challenge_method: 'S256',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      });
+      response.writeHead(302, { location: `${ACCOUNTS}/authorize?${params.toString()}` });
+      return response.end();
+    }
+
+    if (url.pathname === '/callback') {
+      const code = url.searchParams.get('code');
+      const denied = url.searchParams.get('error');
+      if (denied) return json(response, 400, { error: denied });
+      if (!code) return json(response, 400, { error: 'no code' });
+
+      const { verifier } = readJson(VERIFIER_FILE, {});
+      if (!verifier) return json(response, 400, { error: 'the login expired, start again at /auth' });
+
+      const token = await accountRequest({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: REDIRECT,
+        code_verifier: verifier,
+      });
+      writeJson(AUTH_FILE, { refresh_token: token.refresh_token });
+      userToken = { token: '', expires: 0, id: '', name: '' };
+      return json(response, 200, { ok: true, message: 'Connected. Playlists are made in this account from now on.' });
+    }
+
+    if (url.pathname === '/api/status') {
+      let name = null;
+      if (authorised()) {
+        try {
+          name = (await accountToken()).name;
+        } catch {
+          name = null;
+        }
+      }
+      return json(response, 200, { connected: authorised(), name, clientId: !!CLIENT_ID });
+    }
+
     if (url.pathname === '/api/setup') {
-      return json(response, 200, { ticketmaster: !!TM_KEY, tracks: 'deezer', cities: CITIES });
+      return json(response, 200, { ticketmaster: !!TM_KEY, tracks: 'deezer', spotify: authorised(), cities: CITIES });
     }
 
     if (url.pathname === '/api/city') {
@@ -242,7 +438,19 @@ const server = createServer(async (request, response) => {
 
       /* Both weeks at once: choosing a city should hand back the whole thing. */
       const [thisWeek, nextWeek] = await Promise.all([lineup(city, 'this'), lineup(city, 'next')]);
-      return json(response, 200, { city, this: thisWeek, next: nextWeek });
+
+      /* And both playlists, in the authorised account, made on demand and then reused. */
+      const [thisSpotify, nextSpotify] = await Promise.all([
+        ensureSpotifyPlaylist(city, 'this', thisWeek),
+        ensureSpotifyPlaylist(city, 'next', nextWeek),
+      ]);
+
+      return json(response, 200, {
+        city,
+        this: { ...thisWeek, spotify: thisSpotify },
+        next: { ...nextWeek, spotify: nextSpotify },
+        connected: authorised(),
+      });
     }
 
     if (url.pathname === '/api/lineup') {

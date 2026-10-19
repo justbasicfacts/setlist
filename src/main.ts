@@ -31,6 +31,7 @@ type Lineup = {
   events: number;
   tracks: Track[];
   eventsList?: { day: string; venue: string; artists: string[] }[];
+  spotify?: { id: string; url: string; embed: string; count: number; reused: boolean } | null;
   empty?: boolean;
 };
 
@@ -46,6 +47,8 @@ const state: {
   message: string;
   current: number;
   copied: 'tracks' | 'link' | null;
+  connected: boolean;
+  account: string | null;
 } = {
   city: 'Berlin',
   week: 'this',
@@ -55,6 +58,8 @@ const state: {
   message: '',
   current: 0,
   copied: null,
+  connected: false,
+  account: null,
 };
 
 const escape = (value: string): string =>
@@ -76,6 +81,7 @@ const load = async (): Promise<void> => {
       city: string;
       this: Lineup;
       next: Lineup;
+      connected?: boolean;
       error?: string;
     };
     if (token !== run) return;
@@ -83,6 +89,7 @@ const load = async (): Promise<void> => {
 
     state.weeks = { this: body.this, next: body.next };
     state.lineup = state.weeks[state.week];
+    state.connected = !!body.connected;
     state.status = 'ok';
   } catch (error) {
     if (token !== run) return;
@@ -242,6 +249,12 @@ const render = (): void => {
         </p>
         ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
         ${
+          !state.connected && state.status === 'ok'
+            ? `<p class="also">Playlists can live in your own Spotify instead of here. <a class="linkish" href="/auth">Connect once</a>, then they are made automatically for every city and week.</p>`
+            : ''
+        }
+        ${state.connected && lineup?.spotify ? `<p class="also">In your Spotify: <b>${lineup.spotify.count}</b> tracks${lineup.spotify.reused ? ' (made earlier, left alone)' : ' (made just now)'}.</p>` : ''}
+        ${
           state.weeks
             ? `<p class="also">${
                 state.week === 'this'
@@ -267,7 +280,11 @@ const render = (): void => {
                          <p id="meta" class="sub">${escape([playing.album, '30 second preview'].filter(Boolean).join(' · '))}</p>
                        </div>
                        <div class="player-actions">
-                         <button type="button" class="shuffle primary" id="tracks">${state.copied === 'tracks' ? 'Copied' : 'Send to Spotify'}</button>
+                         ${
+                           lineup?.spotify
+                             ? `<a class="shuffle primary" id="spot" href="${escape(lineup.spotify.url)}" target="_blank" rel="noopener">Playlist in Spotify</a>`
+                             : `<button type="button" class="shuffle primary" id="tracks">${state.copied === 'tracks' ? 'Copied' : 'Send to Spotify'}</button>`
+                         }
                          <button type="button" class="shuffle" id="link">${state.copied === 'link' ? 'Link copied' : 'Playlist link'}</button>
                          <a class="shuffle" id="m3u" href="/api/playlist.m3u?city=${encodeURIComponent(state.city)}&week=${state.week}">For VLC</a>
                        </div>

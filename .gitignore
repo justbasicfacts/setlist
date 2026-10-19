@@ -3,3 +3,9 @@ dist
 .env
 .env.local
 
+# Spotify authorisation, and the caches
+server/.spotify.json
+server/.verifier.json
+server/.spotify-playlists.json
+server/.lineup-cache.json
+server/.artist-cache.json
