@@ -295,6 +295,19 @@ const ensureSpotifyPlaylist = async (city, week, data) => {
     if (known?.id) {
       try {
         await spotifyWrite(token, `/playlists/${known.id}`);
+        const artists = artistsIn(data.eventsList ?? []);
+        if ((known.count ?? 0) < artists.length) {
+          const uris = await spotifyUris(token, artists).catch(() => []);
+          if (uris.length > known.count) {
+            await spotifyWrite(token, `/playlists/${known.id}/tracks`, {
+              method: 'POST',
+              body: JSON.stringify({ uris: uris.slice(0, 100) }),
+            });
+            known.count = uris.length;
+            spotifyPlaylists[key] = known;
+            writeJson(SPOTIFY_FILE, spotifyPlaylists);
+          }
+        }
         return { ...known, reused: true };
       } catch {
         /* deleted, or not ours any more */
@@ -302,10 +315,15 @@ const ensureSpotifyPlaylist = async (city, week, data) => {
     }
 
     const artists = artistsIn(data.eventsList ?? []);
-    const uris = await spotifyUris(token, artists);
-    if (uris.length === 0) return known ?? null;
+    let uris = [];
+    try {
+      uris = await spotifyUris(token, artists);
+    } catch {
+      /* search quota: the playlist still gets made, the tracks follow later */
+    }
 
-    const created = await spotifyWrite(token, `/users/${encodeURIComponent(userToken.id)}/playlists`, {
+    /* /me/playlists, not /users/{id}/playlists: the latter is 403 for newer apps. */
+    const created = await spotifyWrite(token, '/me/playlists', {
       method: 'POST',
       body: JSON.stringify({
         name: `${city} · ${weekHeading(week)} · ${data.label}`,
@@ -314,10 +332,12 @@ const ensureSpotifyPlaylist = async (city, week, data) => {
       }),
     });
 
-    await spotifyWrite(token, `/playlists/${created.id}/tracks`, {
-      method: 'POST',
-      body: JSON.stringify({ uris: uris.slice(0, 100) }),
-    });
+    if (uris.length > 0) {
+      await spotifyWrite(token, `/playlists/${created.id}/tracks`, {
+        method: 'POST',
+        body: JSON.stringify({ uris: uris.slice(0, 100) }),
+      });
+    }
 
     const record = {
       id: created.id,
@@ -499,6 +519,7 @@ const server = createServer(async (request, response) => {
         this: { ...thisWeek, spotify: thisSpotify },
         next: { ...nextWeek, spotify: nextSpotify },
         connected: authorised(),
+        scopesOk: !!thisSpotify || !authorised(),
       });
     }
 

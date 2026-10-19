@@ -48,6 +48,7 @@ const state: {
   current: number;
   copied: 'tracks' | 'link' | null;
   connected: boolean;
+  scopesOk: boolean;
   account: string | null;
 } = {
   city: 'Berlin',
@@ -59,6 +60,7 @@ const state: {
   current: 0,
   copied: null,
   connected: false,
+  scopesOk: false,
   account: null,
 };
 
@@ -82,6 +84,7 @@ const load = async (): Promise<void> => {
       this: Lineup;
       next: Lineup;
       connected?: boolean;
+      scopesOk?: boolean;
       error?: string;
     };
     if (token !== run) return;
@@ -90,6 +93,7 @@ const load = async (): Promise<void> => {
     state.weeks = { this: body.this, next: body.next };
     state.lineup = state.weeks[state.week];
     state.connected = !!body.connected;
+    state.scopesOk = !!body.scopesOk;
     state.status = 'ok';
   } catch (error) {
     if (token !== run) return;
@@ -248,6 +252,7 @@ const render = (): void => {
           Pick any row to hear it. Nothing to sign up for.
         </p>
         ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
+        ${state.connected && !state.scopesOk ? `<p class="problem">Spotify is connected, but without permission to write playlists. <a class="linkish" href="/auth">Connect again</a> and keep the playlist boxes ticked.</p>` : ''}
         ${
           !state.connected && state.status === 'ok'
             ? `<p class="also">Playlists can live in your own Spotify instead of here. <a class="linkish" href="/auth">Connect once</a>, then they are made automatically for every city and week.</p>`
