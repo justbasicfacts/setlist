@@ -1413,3 +1413,38 @@ body { padding-bottom: 0; }
   padding: 9px 20px;
   margin: 0 14px 0 0;
 }
+
+/* controls on one row, and play all clear of the counts */
+.nowbar .barbuttons {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nowbar .barbuttons > button {
+  position: static;
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
+  cursor: pointer;
+}
+.nowbar .barbuttons > button:hover { color: var(--lime); border-color: var(--lime); }
+.nowbar .barbuttons .closebar { font-size: 16px; padding: 0 8px; }
+.nowbar .nowlabel { padding-right: 210px; }
+
+.playall {
+  display: block;
+  width: fit-content;
+  margin: 6px 0 18px;
+}

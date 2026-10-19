@@ -323,6 +323,7 @@ const render = (): void => {
       <section class="hero">
         <h1>${escape(cityName)},<br /><em>${escape(heading)}</em></h1>
         ${state.lineup?.rows.length ? `<button type="button" class="playall" id="playall">&#9654; play all</button>` : ''}
+
         <p class="count">${
           state.status === 'loading'
             ? 'Looking for gigs&hellip;'
@@ -338,9 +339,11 @@ const render = (): void => {
       <div class="nowbar" id="nowbar" hidden>
         <span class="nowlabel" id="nowlabel"></span>
         <nav class="services" id="services" aria-label="Play this song elsewhere"></nav>
-        <button type="button" class="closebar" id="closebar" aria-label="Close player">&times;</button>
-        <button type="button" class="nextsong" id="nextsong">next &#9654;</button>
-        <button type="button" class="collapsebar" id="collapsebar" aria-label="Collapse player">&#9662;</button>
+        <div class="barbuttons">
+          <button type="button" class="nextsong" id="nextsong">next &#9654;</button>
+          <button type="button" class="collapsebar" id="collapsebar" aria-label="Collapse player">&#9662;</button>
+          <button type="button" class="closebar" id="closebar" aria-label="Close player">&times;</button>
+        </div>
         <div id="yt"></div>
       </div>
 
