@@ -231,18 +231,18 @@ const render = (): void => {
                        .map(
                          (gig) => `
                        <li class="gig">
-                         <div class="gig-head">
-                           <span class="when">${escape(when(gig))}</span>
-                           <span class="where">${escape(gig.venue)}${gig.district && gig.district !== lineup.city.name ? `, ${escape(gig.district)}` : ''}</span>
-                         </div>
-                         <p class="who">${gig.artists.map((artist) => escape(artist)).join(' + ')}</p>
+                         <div class="when">${escape(when(gig))}</div>
+                         <div class="body">
+                           <p class="who">${gig.artists.map((artist) => escape(artist)).join(' + ')}</p>
+                           <p class="where">${escape(gig.venue)}${gig.district && gig.district !== lineup.city.name ? ` &middot; ${escape(gig.district)}` : ''}</p>
                          <ul class="songs">
                            ${gig.songs
                              .map(
                                (song) => `<li class="${song.preview ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.preview ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? ` &mdash; <span class="song">${escape(song.title)}</span>` : ' <span class="song none">no song found</span>'}</li>`,
                              )
                              .join('')}
-                         </ul>
+                           </ul>
+                         </div>
                        </li>`,
                        )
                        .join('')}
@@ -308,14 +308,12 @@ const render = (): void => {
 };
 
 void (async () => {
+  const berlin: City = { name: 'Berlin', country: 'DE', countryName: 'Germany', region: 'Berlin', lat: 52.5170365, lon: 13.3888599 };
   const response = await fetch('/api/cities?q=Berlin').catch(() => null);
   if (response?.ok) {
     const body = (await response.json()) as { cities: City[] };
-    const berlin = body.cities?.[0];
-    if (berlin) {
-      pick(berlin);
-      return;
-    }
+    pick(body.cities?.[0] ?? berlin);
+    return;
   }
-  render();
+  pick(berlin);
 })();

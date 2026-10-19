@@ -17,6 +17,7 @@ const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
 const DEEZER = 'https://api.deezer.com';
 const PHOTON = 'https://photon.komoot.io';
+const NOMINATIM = 'https://nominatim.openstreetmap.org';
 const UA = 'whosplaying/0.1 (local dev)';
 
 const LINEUP_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
@@ -72,15 +73,53 @@ const weekHeading = (week) => (week === 'next' ? 'next week' : 'this week');
  * a plain place search does not ("Istan" otherwise returns a hamlet in Andalusia).
  * Only real settlements are kept, and a prefix match outranks the rest.
  */
-const findCities = async (query) => {
-  const params = new URLSearchParams({ q: query, limit: '12', lang: 'en' });
+const cityCache = new Map();
 
+const fromPhoton = async (query) => {
+  const params = new URLSearchParams({ q: query, limit: '12', lang: 'en' });
   const response = await fetch(`${PHOTON}/api/?${params.toString()}`, {
+    headers: { 'user-agent': UA, accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`Photon ${response.status}`);
+  return response.json();
+};
+
+/** Slower, but it does not rate limit the way Photon does. */
+const fromNominatim = async (query) => {
+  const params = new URLSearchParams({ q: query, format: 'jsonv2', addressdetails: '1', limit: '10', 'accept-language': 'en' });
+  const response = await fetch(`${NOMINATIM}/search?${params.toString()}`, {
     headers: { 'user-agent': UA, accept: 'application/json' },
     signal: AbortSignal.timeout(12_000),
   });
-  if (!response.ok) throw Object.assign(new Error(`Photon answered ${response.status}`), { code: 502 });
-  const body = await response.json();
+  if (!response.ok) throw new Error(`Nominatim ${response.status}`);
+  const hits = await response.json();
+  return {
+    features: hits
+      .map((hit) => ({
+        properties: {
+          name: hit.address?.city ?? hit.address?.town ?? hit.address?.village ?? hit.name,
+          countrycode: hit.address?.country_code,
+          country: hit.address?.country,
+          state: hit.address?.state,
+          osm_value: hit.address?.city ? 'city' : hit.address?.town ? 'town' : 'village',
+        },
+        geometry: { coordinates: [Number(hit.lon), Number(hit.lat)] },
+      }))
+      .filter((feature) => feature.properties.name),
+  };
+};
+
+const findCities = async (query) => {
+  const key = query.trim().toLowerCase();
+  if (cityCache.has(key)) return cityCache.get(key);
+
+  let body;
+  try {
+    body = await fromPhoton(query);
+  } catch {
+    body = await fromNominatim(query);
+  }
 
   const rank = { city: 3, municipality: 2, town: 2, village: 1 };
   const fold = (value) => String(value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
@@ -112,7 +151,9 @@ const findCities = async (query) => {
   }
 
   cities.sort((left, right) => right.importance - left.importance);
-  return cities.map(({ importance, ...city }) => city);
+  const cleaned = cities.map(({ importance, ...city }) => city);
+  cityCache.set(key, cleaned);
+  return cleaned;
 };
 
 /* ------------------------------------------------------------------- events --- */
