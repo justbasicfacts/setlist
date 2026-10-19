@@ -543,3 +543,30 @@ main {
   text-decoration: underline;
   cursor: pointer;
 }
+
+
+/* ------------------------------------------------------------------- embed --- */
+
+.embed {
+  margin-bottom: 18px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #121212;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+}
+
+.embed iframe {
+  display: block;
+  width: 100%;
+  border: 0;
+}
+
+.setup-link {
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.setup-link:hover {
+  color: var(--lime);
+}

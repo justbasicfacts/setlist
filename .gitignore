@@ -3,6 +3,7 @@ dist
 .env
 .env.local
 
-# the Spotify refresh token, and the short-lived PKCE verifier
-server/.token.json
+# the Spotify refresh token, the short-lived PKCE verifier, and the playlist records
+server/.spotify.json
 server/.verifier.json
+server/.playlists.json

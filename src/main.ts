@@ -1,119 +1,89 @@
-import { artistsIn, CITIES, fallbackTitle, fetchEvents, hasKey, weekHeading, weekRange, type Event, type Source, type Week } from './events';
-import {
-  activeSession,
-  authoriseUrl,
-  ensurePlaylist,
-  findTrack,
-  madePlaylist,
-  spotifyReady,
-  type FoundTrack,
-  type MadePlaylist,
-  type Session,
-} from './spotify';
 import './styles.css';
 
 /**
- * City, week, and a playlist in the visitor's own Spotify account. The page makes it,
- * links it, and refuses to make a second one for the same week.
+ * City, week, playlist.
+ *
+ * Everything else happens on the server: it holds the Spotify authorisation, finds
+ * whoever is playing that week, and keeps one playlist per city and week. This page
+ * asks for it and puts the player on screen.
  */
+
+const CITIES = ['Berlin', 'London', 'Lisbon'];
+
+type Track = { title: string; artist: string; url?: string | null };
+
+type Playlist = {
+  city: string;
+  week: 'this' | 'next';
+  label: string;
+  heading: string;
+  id: string | null;
+  url: string | null;
+  name: string | null;
+  tracks: Track[];
+  embed: string | null;
+  created: boolean;
+  empty?: boolean;
+};
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('No #app to render into');
 
-type State = {
+const state: {
   city: string;
-  week: Week;
-  events: Event[];
-  source: Source;
-  tracks: FoundTrack[];
-  playlist: MadePlaylist | null;
-  reused: boolean;
-  session: Session | null;
-  busy: boolean;
-  problem: string;
+  week: 'this' | 'next';
+  playlist: Playlist | null;
+  status: 'loading' | 'ok' | 'unauthorised' | 'error';
+  message: string;
   copied: boolean;
-};
-
-const state: State = {
+  setup: boolean;
+} = {
   city: 'Berlin',
   week: 'this',
-  events: [],
-  source: 'sample',
-  tracks: [],
   playlist: null,
-  reused: false,
-  session: null,
-  busy: true,
-  problem: '',
+  status: 'loading',
+  message: '',
   copied: false,
+  setup: false,
 };
 
 const escape = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string);
 
-const playlistName = (city: string, week: Week): string =>
-  `${city} · ${weekHeading(week)} · ${weekRange(week).label}`;
-
-const playlistKey = (city: string, week: Week): string => {
-  const { start } = weekRange(week);
-  return `${city.trim().toLowerCase()}|${week}|${start.toISOString().slice(0, 10)}`;
-};
-
 let run = 0;
 
-const build = async (): Promise<void> => {
+const load = async (): Promise<void> => {
   const token = ++run;
-  state.busy = true;
-  state.problem = '';
-  state.tracks = [];
-  state.playlist = null;
-  state.reused = false;
+  state.status = 'loading';
+  state.message = '';
   render();
 
-  const found = await fetchEvents(state.city, state.week);
-  const artists = artistsIn(found.events);
+  try {
+    const response = await fetch(`/api/playlist?city=${encodeURIComponent(state.city)}&week=${state.week}`);
+    if (token !== run) return;
 
-  const session = state.session;
-  const tracks: FoundTrack[] = [];
-
-  if (session) {
-    for (const artist of artists) {
-      tracks.push(await findTrack(session.accessToken, artist, fallbackTitle(artist)));
+    if (response.status === 401) {
+      state.status = 'unauthorised';
+      state.playlist = null;
+      render();
+      return;
     }
+
+    const body = (await response.json()) as Playlist & { error?: string };
+    if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
+
+    state.playlist = body;
+    state.status = 'ok';
+  } catch (error) {
+    if (token !== run) return;
+    state.status = 'error';
+    state.message = error instanceof Error ? error.message : String(error);
   }
-
-  if (token !== run) return;
-
-  state.events = found.events;
-  state.source = found.source;
-  state.tracks = tracks;
-  state.problem = found.problem ?? '';
-
-  if (session && tracks.length > 0) {
-    try {
-      const uris = tracks.map((track) => track.uri).filter((uri): uri is string => !!uri);
-      const made = await ensurePlaylist(
-        session,
-        playlistKey(state.city, state.week),
-        playlistName(state.city, state.week),
-        'Generated from whoever is playing that week. No decisions were made.',
-        uris,
-      );
-      if (token !== run) return;
-      state.playlist = made.playlist;
-      state.reused = made.reused;
-    } catch (error) {
-      if (token !== run) return;
-      state.problem = error instanceof Error ? error.message : 'Spotify refused';
-    }
-  }
-
-  state.busy = false;
   render();
 };
 
 const copy = async (): Promise<void> => {
-  if (!state.playlist) return;
+  if (!state.playlist?.url) return;
   try {
     await navigator.clipboard.writeText(state.playlist.url);
     state.copied = true;
@@ -123,20 +93,21 @@ const copy = async (): Promise<void> => {
       render();
     }, 2000);
   } catch {
-    state.problem = 'The clipboard refused. Select the link instead.';
+    state.status = 'error';
+    state.message = 'The clipboard refused. Select the link instead.';
     render();
   }
 };
 
-const whatsMissing = (): string | null => {
-  if (!spotifyReady) return 'Set SPOTIFY_CLIENT_ID in .env and register the redirect URI, then restart.';
-  if (!state.session) return null;
-  return null;
+const stats = (playlist: Playlist): string => {
+  const artists = new Set(playlist.tracks.map((track) => track.artist)).size;
+  return `<b>${playlist.tracks.length}</b> tracks &middot; <b>${artists}</b> artists &middot; <b>0</b> decisions by you`;
 };
 
 const render = (): void => {
-  const known = madePlaylist(playlistKey(state.city, state.week));
-  const sticker = state.source === 'ticketmaster' ? 'live from Ticketmaster' : hasKey ? 'sample lineups' : 'sample lineups - no API key';
+  const playlist = state.playlist;
+  const heading = playlist?.heading ?? (state.week === 'next' ? 'next week' : 'this week');
+  const label = playlist?.label ?? '';
 
   app.innerHTML = `
     <header class="bar">
@@ -156,51 +127,58 @@ const render = (): void => {
           <button type="button" data-week="this" class="${state.week === 'this' ? 'on' : ''}">This week</button>
           <button type="button" data-week="next" class="${state.week === 'next' ? 'on' : ''}">Next week</button>
         </div>
-        <span class="dates">${weekRange(state.week).label}</span>
-        <span class="sticker">${escape(sticker)}</span>
+        <span class="dates">${escape(label)}</span>
+        <span class="sticker">made for you, weekly</span>
       </section>
 
       <section class="hero">
-        <h1>${escape(state.city)},<br /><em>${weekHeading(state.week)}</em></h1>
-        ${
-          state.busy
-            ? `<p class="count">Making the playlist&hellip;</p>`
-            : state.session
-              ? `<p class="count"><b>${state.tracks.length}</b> tracks &middot; <b>${new Set(state.events.flatMap((event) => event.artists)).size}</b> artists &middot; <b>0</b> decisions by you</p>`
-              : `<p class="count"><b>${new Set(state.events.flatMap((event) => event.artists)).size}</b> artists this week &middot; playlist waiting for one authorisation</p>`
-        }
+        <h1>${escape(state.city)},<br /><em>${escape(heading)}</em></h1>
+        <p class="count">${
+          state.status === 'loading'
+            ? 'Putting the playlist together&hellip;'
+            : state.status === 'unauthorised'
+              ? 'Not switched on yet'
+              : playlist && !playlist.empty
+                ? stats(playlist)
+                : 'Nobody playing, nothing to play'
+        }</p>
         <p class="why">
-          One song from every artist playing in ${escape(state.city)} ${weekHeading(state.week)}, in gig order,
-          written into a Spotify playlist so you can send it to whoever you are going with.
+          One song from every artist playing in ${escape(state.city)} ${escape(heading)}, in gig order,
+          in a Spotify playlist you can play here or send to whoever you are going with.
         </p>
-        ${state.problem ? `<p class="problem">${escape(state.problem)}</p>` : ''}
-        ${whatsMissing() ? `<p class="problem">${escape(whatsMissing()!)}</p>` : ''}
+        ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
       </section>
 
       <section class="panel single">
-        <h2>The playlist <span class="hint">generated, not curated</span></h2>
-
         ${
-          !spotifyReady
-            ? `<p class="empty">Spotify is not set up.<br /><span>Add SPOTIFY_CLIENT_ID to .env and register http://localhost:5180/ as a redirect URI.</span></p>`
-            : !state.session
-              ? `<div class="connect-block">
-                   <p class="empty">Nobody has authorised this site yet.<br /><span>One click here, once, and every playlist after it is made automatically.</span></p>
-                   <button type="button" class="shuffle big" id="connect">Authorise once</button>
-                 </div>`
-              : state.busy
-                ? `<p class="empty">Asking ${escape(state.session.displayName)}&rsquo;s Spotify&hellip;<br /><span>one track per artist, then straight into a playlist.</span></p>`
-                : state.playlist
-                  ? `<div class="share">
+          state.status === 'loading'
+            ? `<p class="empty">Working on it&hellip;<br /><span>one track per artist, then the player appears.</span></p>`
+            : state.status === 'unauthorised'
+              ? `<p class="empty">Playlists are not switched on yet.<br /><span>One approval by whoever runs the site, then every city and week fills itself in.</span></p>
+                 ${state.setup ? `<p class="aside"><a class="setup-link" href="/auth">Authorise Spotify now</a></p>` : ''}`
+              : playlist?.empty
+                ? `<p class="empty">No gigs in ${escape(state.city)} ${escape(heading)}.<br /><span>Try the other week, or another city.</span></p>`
+                : playlist?.embed
+                  ? `<div class="embed">
+                       <iframe
+                         title="${escape(playlist.name ?? 'Playlist')}"
+                         src="${escape(playlist.embed)}"
+                         width="100%"
+                         height="420"
+                         frameborder="0"
+                         allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+                         loading="lazy"></iframe>
+                     </div>
+                     <div class="share">
                        <div>
-                         <p class="share-label">${state.reused ? 'Already made for this week, so we left it alone' : 'Created just now'}</p>
-                         <a class="share-link" href="${escape(state.playlist.url)}" target="_blank" rel="noopener">Open in Spotify</a>
-                         <p class="share-url">${escape(state.playlist.url)}</p>
+                         <p class="share-label">${playlist.created ? 'Made just now, for this week' : 'Made earlier, left alone'}</p>
+                         <a class="share-link" href="${escape(playlist.url ?? '#')}" target="_blank" rel="noopener">Open in Spotify</a>
+                         <p class="share-url">${escape(playlist.url ?? '')}</p>
                        </div>
                        <button type="button" class="shuffle" id="copy">${state.copied ? 'Copied' : 'Copy link'}</button>
                      </div>
                      <ol class="tracks">
-                       ${state.tracks
+                       ${playlist.tracks
                          .map(
                            (track, index) => `
                          <li>
@@ -213,46 +191,31 @@ const render = (): void => {
                          )
                          .join('')}
                      </ol>`
-                  : `<p class="empty">Nothing to put on it.<br /><span>No gigs, no playlist. Try another week.</span></p>`
+                  : `<p class="empty">Nothing came back.<br /><span>${escape(state.message || 'Try another week.')}</span></p>`
         }
-
-        ${
-          state.session
-            ? `<p class="aside">Playlists are created in ${escape(state.session.displayName)}'s Spotify, automatically, once per city and week.</p>`
-            : ''
-        }
-        ${known && !state.playlist && !state.busy && state.session ? `<p class="aside">There is a playlist from earlier (${escape(known.id)}), but Spotify would not return it. A new one will be made.</p>` : ''}
       </section>
 
       <p class="fineprint">
-        Lineups ${state.source === 'ticketmaster' ? 'from the Ticketmaster Discovery API' : 'are invented for the sample cities'}.
-        Titles and the playlist are Spotify's. The enthusiasm is ours.
+        Lineups from the Ticketmaster Discovery API, tracks and playlists from Spotify.
+        ${state.setup ? '<a class="setup-link" href="/auth">Authorise Spotify</a>' : '<a class="setup-link" href="?setup=1">Setup</a>'}
       </p>
     </main>
   `;
 
   app.querySelector<HTMLSelectElement>('#city')?.addEventListener('change', (event) => {
     state.city = (event.target as HTMLSelectElement).value;
-    void build();
+    void load();
   });
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {
       state.week = button.dataset.week === 'next' ? 'next' : 'this';
-      void build();
+      void load();
     });
   });
 
-  app.querySelector<HTMLButtonElement>('#connect')?.addEventListener('click', () => {
-    window.location.assign(authoriseUrl);
-  });
-
   app.querySelector<HTMLButtonElement>('#copy')?.addEventListener('click', () => void copy());
-
 };
 
-/** The server holds the authorisation, so this is the whole start-up. */
-void (async () => {
-  state.session = await activeSession();
-  await build();
-})();
+state.setup = new URLSearchParams(window.location.search).has('setup');
+void load();
