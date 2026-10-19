@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const PORT = Number(process.env.PORT ?? process.env.API_PORT ?? 5181);
 const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
+const LASTFM_KEY = process.env.LASTFM_API_KEY ?? '';
 const DEEZER = 'https://api.deezer.com';
 const PHOTON = 'https://photon.komoot.io';
 const NOMINATIM = 'https://nominatim.openstreetmap.org';
@@ -258,6 +259,55 @@ const artistsIn = (events) => [...new Set(events.flatMap((event) => event.artist
 
 /* -------------------------------------------------------------------- songs --- */
 
+/* --------------------------------------------------------------- last.fm --- */
+
+/** Last.fm's events for a place: the fallback where Ticketmaster has no listings. */
+const lastFmEvents = async (city, week) => {
+  if (!LASTFM_KEY) return [];
+
+  const { start, end } = weekRange(week);
+  const params = new URLSearchParams({
+    method: 'geo.getEvents',
+    location: city.name,
+    api_key: LASTFM_KEY,
+    format: 'json',
+    limit: '100',
+    datefrom: start,
+    dateto: end,
+  });
+
+  try {
+    const response = await fetch(`https://ws.audioscrobbler.com/2.0/?${params.toString()}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return [];
+    const body = await response.json();
+    const list = body.events?.event ?? [];
+    const events = Array.isArray(list) ? list : [list];
+
+    return events.map((event) => {
+      const date = event.startDate ? new Date(Number(event.startDate) * 1000) : null;
+      const artists = (event.artists?.artist ?? [])
+        .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
+        .filter(Boolean);
+
+      return {
+        date: date ? date.toISOString().slice(0, 10) : '',
+        day: date ? date.toLocaleDateString('en-GB', { weekday: 'short' }) : '',
+        venue: event.venue?.name?.trim() || 'Venue to be announced',
+        district: event.venue?.location?.city ?? '',
+        time: '',
+        artists: mergeNames(artists),
+        sameCity: true,
+        away: null,
+        source: 'Last.fm',
+      };
+    });
+  } catch {
+    return [];
+  }
+};
+
 const artistCache = readJson(ARTIST_FILE, {});
 
 /** The most popular track Deezer has for an artist, kept forever once found. */
@@ -339,7 +389,14 @@ const buildLineup = async (city, week) => {
    */
   const { start, end } = weekRange(week);
 
-  const all = fromTicketmaster(await ticketmaster(city, week), city)
+  let raw = await ticketmaster(city, week);
+  let fallback = [];
+  if (raw.length === 0) {
+    /* Nothing from Ticketmaster here: try Last.fm before showing an empty page. */
+    fallback = await lastFmEvents(city, week);
+  }
+
+  const all = (raw.length > 0 ? fromTicketmaster(raw, city) : fallback)
     .filter((event) => event.artists.length > 0)
     /* The week is enforced here as well as in the query: a stray month cannot leak in. */
     .filter((event) => !!event.date && event.date >= start && event.date <= end)
