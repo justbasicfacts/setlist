@@ -638,3 +638,88 @@ main {
 .tracks.selectable li.playing .play {
   color: var(--lime);
 }
+
+
+/* ----------------------------------------------------------------- player --- */
+
+.player {
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px dashed var(--lime);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.player-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.player .art {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1a1a1a;
+}
+
+.player-now {
+  flex: 1;
+  min-width: 190px;
+}
+
+.player-now #now {
+  margin: 0;
+  font-size: 15px;
+}
+
+.player-now #now b {
+  font-family: 'Archivo Black', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+.player-now .sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.player-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.player audio {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  height: 36px;
+}
+
+.tracks.selectable li {
+  cursor: pointer;
+  grid-template-columns: 34px 1fr 18px;
+}
+
+.tracks.selectable li:hover {
+  border-color: rgba(196, 255, 61, 0.5);
+}
+
+.tracks.selectable li.playing {
+  border-color: var(--lime);
+  background: rgba(196, 255, 61, 0.06);
+}
+
+.tracks.selectable li .play {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.tracks.selectable li:hover .play,
+.tracks.selectable li.playing .play {
+  color: var(--lime);
+}

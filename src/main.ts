@@ -1,11 +1,11 @@
 import './styles.css';
 
 /**
- * City, week, and the week's tracks, playing in the page.
+ * City, week, and the week's music, playing in the page.
  *
- * No accounts and nothing to authorise: the server reads the public Spotify catalogue
- * with an app token, and the page plays the tracks through Spotify's embed. Every row
- * opens the same player, so the list stays a list.
+ * Nothing to sign into and nothing to authorise: the server reads the lineups and one
+ * track per artist, and this page plays the preview inline. The list stays a list,
+ * every row swaps the same player.
  */
 
 const CITIES = ['Berlin', 'London', 'Amsterdam', 'Dublin'];
@@ -14,10 +14,11 @@ type Track = {
   id: string;
   title: string;
   artist: string;
-  url: string;
-  embed: string;
   album?: string | null;
   artwork?: string | null;
+  preview: string;
+  url: string;
+  spotify: string;
 };
 
 type Lineup = {
@@ -31,7 +32,6 @@ type Lineup = {
   tracks: Track[];
   eventsList?: { day: string; venue: string; artists: string[] }[];
   empty?: boolean;
-  limited?: boolean;
 };
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -88,34 +88,55 @@ const currentTrack = (): Track | null => {
   return tracks[state.current] ?? tracks[0] ?? null;
 };
 
-/** Swap the player in place, so clicking a row does not rebuild the page. */
+/** Swap the player in place so clicking a row does not rebuild the page. */
 const play = (index: number): void => {
   const track = state.lineup?.tracks[index];
   if (!track) return;
   state.current = index;
 
-  const frame = app.querySelector<HTMLIFrameElement>('#player');
-  if (frame) frame.src = `${track.embed}?utm_source=generator&theme=0`;
+  const audio = app.querySelector<HTMLAudioElement>('#audio');
+  if (audio) {
+    audio.src = track.preview;
+    void audio.play().catch(() => {
+      /* autoplay rules: the controls are right there */
+    });
+  }
 
   app.querySelectorAll<HTMLLIElement>('.tracks li').forEach((row, position) => {
     row.classList.toggle('playing', position === index);
   });
 
   const now = app.querySelector<HTMLElement>('#now');
-  if (now) {
-    now.innerHTML = `<b>${escape(track.title)}</b> <span class="a">${escape(track.artist)}</span>`;
+  if (now) now.innerHTML = `<b>${escape(track.title)}</b> <span class="a">${escape(track.artist)}</span>`;
+
+  const meta = app.querySelector<HTMLElement>('#meta');
+  if (meta) meta.textContent = [track.album, '30 second preview'].filter(Boolean).join(' · ');
+
+  const art = app.querySelector<HTMLImageElement>('#art');
+  if (art) {
+    art.src = track.artwork ?? '';
+    art.hidden = !track.artwork;
   }
 
-  const link = app.querySelector<HTMLAnchorElement>('#open');
-  if (link) link.href = track.url;
+  const deezer = app.querySelector<HTMLAnchorElement>('#open');
+  if (deezer) deezer.href = track.url;
+
+  const spotify = app.querySelector<HTMLAnchorElement>('#spotify');
+  if (spotify) spotify.href = track.spotify;
+};
+
+/** The playlist's address: the same city and week, so the link opens what you see. */
+const playlistLink = (): string => {
+  const url = new URL(window.location.href);
+  url.search = new URLSearchParams({ city: state.city, week: state.week }).toString();
+  return url.toString();
 };
 
 const copyList = async (): Promise<void> => {
   const tracks = state.lineup?.tracks ?? [];
   if (tracks.length === 0) return;
-  const text = tracks.map((track) => `${track.artist} - ${track.title}`).join('\n');
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(playlistLink());
     state.copied = true;
     render();
     window.setTimeout(() => {
@@ -134,6 +155,7 @@ const render = (): void => {
   const playing = currentTrack();
   const heading = lineup?.heading ?? (state.week === 'next' ? 'next week' : 'this week');
   const label = lineup?.label ?? '';
+  const artists = new Set((lineup?.eventsList ?? []).flatMap((event) => event.artists));
 
   app.innerHTML = `
     <header class="bar">
@@ -163,9 +185,7 @@ const render = (): void => {
           state.status === 'loading'
             ? 'Working out who is in town&hellip;'
             : lineup && !lineup.empty
-              ? tracks.length > 0
-                ? `<b>${tracks.length}</b> tracks &middot; <b>${new Set(tracks.map((track) => track.artist)).size}</b> artists &middot; <b>0</b> decisions by you`
-                : `<b>${lineup.events}</b> gigs &middot; <b>${new Set((lineup.eventsList ?? []).flatMap((event) => event.artists)).size}</b> artists &middot; tracks once Spotify's allowance resets`
+              ? `<b>${tracks.length}</b> tracks &middot; <b>${artists.size}</b> artists &middot; <b>0</b> decisions by you`
               : 'Nobody playing, nothing to play'
         }</p>
         <p class="why">
@@ -173,7 +193,6 @@ const render = (): void => {
           Pick any row to hear it. Nothing to sign up for.
         </p>
         ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
-        ${lineup?.limited ? `<p class="problem">Spotify's daily allowance for this app is spent, so some tracks are missing until it resets. The lineup is unaffected.</p>` : ''}
       </section>
 
       <section class="panel single">
@@ -185,21 +204,19 @@ const render = (): void => {
               : playing
                 ? `<div class="player">
                      <div class="player-top">
-                       <p id="now"><b>${escape(playing.title)}</b> <span class="a">${escape(playing.artist)}</span></p>
+                       ${playing.artwork ? `<img class="art" id="art" src="${escape(playing.artwork)}" alt="" />` : '<img class="art" id="art" alt="" hidden />'}
+                       <div class="player-now">
+                         <p id="now"><b>${escape(playing.title)}</b> <span class="a">${escape(playing.artist)}</span></p>
+                         <p id="meta" class="sub">${escape([playing.album, '30 second preview'].filter(Boolean).join(' · '))}</p>
+                       </div>
                        <div class="player-actions">
-                         <a class="shuffle" id="open" href="${escape(playing.url)}" target="_blank" rel="noopener">Open in Spotify</a>
-                         <button type="button" class="shuffle" id="copy">${state.copied ? 'Copied' : 'Copy list'}</button>
+                         <a class="shuffle" id="open" href="${escape(playing.url)}" target="_blank" rel="noopener">Deezer</a>
+                         <a class="shuffle" id="spotify" href="${escape(playing.spotify)}" target="_blank" rel="noopener">Find on Spotify</a>
+                         <a class="shuffle" id="m3u" href="/api/playlist.m3u?city=${encodeURIComponent(state.city)}&week=${state.week}">Playlist file</a>
+                         <button type="button" class="shuffle" id="copy">${state.copied ? 'Link copied' : 'Copy link'}</button>
                        </div>
                      </div>
-                     <iframe
-                       id="player"
-                       title="Spotify player"
-                       src="${escape(playing.embed)}?utm_source=generator&theme=0"
-                       width="100%"
-                       height="152"
-                       frameborder="0"
-                       allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                       loading="lazy"></iframe>
+                     <audio id="audio" controls preload="none" src="${escape(playing.preview)}"></audio>
                    </div>
                    <ol class="tracks selectable">
                      ${tracks
@@ -216,29 +233,14 @@ const render = (): void => {
                        )
                        .join('')}
                    </ol>`
-                : lineup && (lineup.eventsList?.length ?? 0) > 0
-                  ? `<p class="empty">The lineup is in, the tracks are not.<br /><span>Spotify's daily allowance for this app is spent. The names below are still worth knowing.</span></p>
-                     <ol class="tracks">
-                       ${(lineup.eventsList ?? [])
-                         .map(
-                           (event, index) => `
-                         <li>
-                           <span class="n">${String(index + 1).padStart(2, '0')}</span>
-                           <span class="t">
-                             <b>${escape(event.artists.join(' + '))}</b>
-                             <span class="a">${escape(event.day)} &middot; ${escape(event.venue)}</span>
-                           </span>
-                         </li>`,
-                         )
-                         .join('')}
-                     </ol>`
-                  : `<p class="empty">Nothing came back.<br /><span>${escape(state.message || 'Try another week.')}</span></p>`
+                : `<p class="empty">Nothing came back.<br /><span>${escape(state.message || 'Try another week.')}</span></p>`
         }
       </section>
 
       <p class="fineprint">
-        Lineups from the Ticketmaster Discovery API. Tracks from the public Spotify catalogue,
-        played through Spotify's own player. The enthusiasm is ours.
+        Lineups from the Ticketmaster Discovery API. Tracks and 30 second previews from Deezer's
+        public catalogue. Spotify links carry the artist and title to a search, because building
+        an actual playlist there needs an approval we are not asking anyone for.
       </p>
     </main>
   `;
@@ -256,12 +258,17 @@ const render = (): void => {
   });
 
   app.querySelectorAll<HTMLLIElement>('.tracks.selectable li').forEach((row) => {
-    const index = Number(row.dataset.index ?? '0');
-    row.addEventListener('click', () => play(index));
+    row.addEventListener('click', () => play(Number(row.dataset.index ?? '0')));
   });
 
   app.querySelector<HTMLButtonElement>('#copy')?.addEventListener('click', () => void copyList());
 };
 
-/** Playlists cannot be created without a person approving once, so nothing asks. */
-void load();
+/* A shared link carries the city and week with it. */
+const params = new URLSearchParams(window.location.search);
+if (CITIES.includes(params.get('city') ?? '')) state.city = params.get('city') as string;
+if (params.get('week') === 'next') state.week = 'next';
+
+void load().then(() => {
+  window.history.replaceState({}, '', playlistLink());
+});

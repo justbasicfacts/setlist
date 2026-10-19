@@ -3,14 +3,14 @@
  *
  *   node --env-file-if-exists=.env server/api.mjs
  *
- * No authorisation and no accounts anywhere. Spotify will not let an app create a
- * playlist without a person approving it once (the app token gets 403 on any playlist
- * write), so this does not try: it reads the public catalogue, which an app token is
- * allowed to do, and the page plays the tracks itself.
+ * No accounts, no approval, no music API key. Lineups come from Ticketmaster (key in
+ * .env), tracks and previews from Deezer's public API, which has no daily allowance to
+ * spend. Spotify is linked to, not called: its API needs either a person's approval
+ * (playlists) or an app quota we already exhausted once.
  *
  * Endpoints
- *   GET /api/lineup?city=Berlin&week=this   the week's artists and one track each
- *   GET /api/setup                          what the server has configured
+ *   GET /api/lineup?city=Berlin&week=this
+ *   GET /api/setup
  */
 
 import { createServer } from 'node:http';
@@ -18,16 +18,36 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const PORT = Number(process.env.API_PORT ?? 5181);
 const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
-const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID ?? '';
-const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET ?? '';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
-const SPOTIFY = process.env.SPOTIFY_API_BASE ?? 'https://api.spotify.com/v1';
-const ACCOUNTS = process.env.SPOTIFY_ACCOUNTS_BASE ?? 'https://accounts.spotify.com';
+const DEEZER = process.env.DEEZER_API_BASE ?? 'https://api.deezer.com';
 
 export const CITIES = ['Berlin', 'London', 'Amsterdam', 'Dublin'];
 const COUNTRY = { berlin: 'DE', london: 'GB', amsterdam: 'NL', dublin: 'IE' };
 
-/* -------------------------------------------------------------------- week --- */
+const LINEUP_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
+const ARTIST_FILE = new URL('.artist-cache.json', import.meta.url).pathname;
+
+/* -------------------------------------------------------------------- files --- */
+
+const readJson = (path, fallback) => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return fallback;
+  }
+};
+
+const writeJson = (path, value) => {
+  try {
+    writeFileSync(path, JSON.stringify(value), { mode: 0o600 });
+  } catch {
+    /* a cache that cannot be written is not worth failing a request over */
+  }
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/* --------------------------------------------------------------------- week --- */
 
 const pad = (value) => String(value).padStart(2, '0');
 const iso = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -53,7 +73,7 @@ export const weekRange = (week) => {
 
 export const weekHeading = (week) => (week === 'next' ? 'next week' : 'this week');
 
-/* ------------------------------------------------------------------ events --- */
+/* ------------------------------------------------------------------- events --- */
 
 /** Music events in that city, that week, in date order. */
 export const fetchEvents = async (city, week) => {
@@ -98,159 +118,87 @@ export const fetchEvents = async (city, week) => {
 /** Every artist once, in gig order. */
 export const artistsIn = (events) => [...new Set(events.flatMap((event) => event.artists))];
 
-/* ------------------------------------------------------------------- files --- */
+/* ------------------------------------------------------------------- tracks --- */
 
-function readJson(path, fallback) {
-  try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return fallback;
-  }
-}
+/** One lookup per artist, kept forever: touring artists turn up week after week. */
+const artistCache = readJson(ARTIST_FILE, {});
 
-/* ----------------------------------------------------------------- spotify --- */
-
-let appToken = { token: '', expires: 0 };
-
-/** An app token: the catalogue, and nothing that belongs to a person. */
-const appAccessToken = async () => {
-  if (appToken.token && appToken.expires > Date.now() + 60_000) return appToken.token;
-  if (!CLIENT_ID || !CLIENT_SECRET) {
-    throw Object.assign(new Error('SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET are not set'), { code: 500 });
-  }
-
-  const basic = Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64');
-  const response = await fetch(`${ACCOUNTS}/api/token`, {
-    method: 'POST',
-    headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
-    body: 'grant_type=client_credentials',
-  });
-  const body = await response.json();
-  if (!response.ok) throw Object.assign(new Error(body.error_description ?? `token ${response.status}`), { code: 502 });
-
-  appToken = { token: body.access_token, expires: Date.now() + body.expires_in * 1000 };
-  return appToken.token;
-};
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const spotifySearch = (artist, title) =>
+  `https://open.spotify.com/search/${encodeURIComponent(`${artist} ${title}`)}`;
 
 /**
- * Spotify rate limits by app, and a burst of searches earns 429s. Wait for as long as
- * it asks, then try again rather than losing the artist.
- */
-const search = async (token, path) => {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(`${SPOTIFY}${path}`, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (response.status === 429) {
-      const after = Number(response.headers.get('retry-after') ?? '0');
-      /*
-       * A short pause is a hiccup and worth waiting out. A long one means the app's
-       * quota is spent, and sitting on it would hang the request for minutes, so give
-       * up at once and let the caller show what it has.
-       */
-      if (!after || after > 10) {
-        throw Object.assign(new Error('Spotify quota is spent for now'), { code: 429, quota: true });
-      }
-      await sleep(after * 1000);
-      continue;
-    }
-    if (!response.ok) {
-      throw Object.assign(new Error(`Spotify ${path} answered ${response.status}`), { code: response.status });
-    }
-    return response.json();
-  }
-  throw Object.assign(new Error('Spotify kept rate limiting the search'), { code: 429, quota: true });
-};
-
-/**
- * One track per artist.
+ * The best track Deezer has for an artist.
  *
- * The search is a text search, not an artist lookup, so a result is kept only when
- * the credited artist agrees with the name we asked for. "Egg" otherwise returns a
- * completely different band called Egg.
+ * Deezer's search is fuzzy and ignores the artist: filter, so the query is the plain
+ * name and a result is kept only when the credited artist agrees with it. Of those,
+ * the most popular track wins rather than whichever came back first.
  */
-const trackFor = async (token, artist) => {
-  const params = new URLSearchParams({ q: `artist:"${artist}"`, type: 'track', limit: '5' });
-  const body = await search(token, `/search?${params.toString()}`);
-  const wanted = artist.trim().toLowerCase();
+const trackFor = async (artist) => {
+  const key = artist.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(artistCache, key)) return artistCache[key];
 
-  for (const item of body.tracks?.items ?? []) {
-    if (!item?.uri) continue;
-    const credits = (item.artists ?? []).map((entry) => entry.name?.trim().toLowerCase()).filter(Boolean);
-    const agrees = credits.some((name) => name === wanted || name.includes(wanted) || wanted.includes(name));
-    if (!agrees) continue;
+  let found = null;
 
-    return {
-      id: item.id,
-      title: item.name,
-      artist,
-      url: item.external_urls?.spotify ?? `https://open.spotify.com/track/${item.id}`,
-      embed: `https://open.spotify.com/embed/track/${item.id}`,
-      album: item.album?.name ?? null,
-      artwork: item.album?.images?.[0]?.url ?? null,
-    };
+  try {
+    const response = await fetch(`${DEEZER}/search?q=${encodeURIComponent(artist)}&limit=50`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error(`Deezer answered ${response.status}`);
+    const body = await response.json();
+
+    const matches = (body.data ?? []).filter((item) => {
+      const name = (item.artist?.name ?? '').trim().toLowerCase();
+      return name === key || name.includes(key) || key.includes(name);
+    });
+    matches.sort((left, right) => (right.rank ?? 0) - (left.rank ?? 0));
+
+    const best = matches[0];
+    if (best?.preview) {
+      found = {
+        id: String(best.id),
+        title: best.title,
+        artist,
+        album: best.album?.title ?? null,
+        artwork: best.album?.cover_medium ?? best.album?.cover ?? null,
+        preview: best.preview,
+        url: best.link,
+        spotify: spotifySearch(artist, best.title),
+      };
+    }
+  } catch {
+    /* no track: the lineup still stands */
   }
-  return null;
+
+  artistCache[key] = found;
+  return found;
 };
 
 /* ------------------------------------------------------------------- lineup --- */
 
-/**
- * The lineup for a city and week never changes once made, so it is kept on disk: a
- * restart should not cost a visitor a ten second wait.
- */
-const CACHE_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
-const cache = new Map(Object.entries(readJson(CACHE_FILE, {})));
-
-const persist = () => {
-  try {
-    writeFileSync(CACHE_FILE, JSON.stringify(Object.fromEntries(cache), null, 0), { mode: 0o600 });
-  } catch {
-    /* a cache that cannot be written is not worth failing a request over */
-  }
-};
+const lineups = new Map(Object.entries(readJson(LINEUP_FILE, {})));
 
 /** The week's lineup with one track each. Cached per city and week start. */
 export const lineup = async (city, week) => {
   const key = `${city.toLowerCase()}|${weekRange(week).start}`;
-  const hit = cache.get(key);
-  if (hit) return { ...hit, cached: true };
+  if (lineups.has(key)) return { ...lineups.get(key), cached: true };
 
-  const token = await appAccessToken();
   const events = await fetchEvents(city, week);
   const artists = artistsIn(events);
 
-  if (artists.length === 0) {
-    const empty = { city, week, ...weekRange(week), heading: weekHeading(week), tracks: [], events: 0, empty: true };
-    cache.set(key, empty);
-    return empty;
-  }
-
-  /* Two at a time: enough to be quick, few enough that Spotify does not push back. */
   const tracks = [];
-  const queue = [...artists];
-  let limited = false;
-
-  const worker = async () => {
-    while (queue.length > 0 && !limited) {
-      const artist = queue.shift();
-      if (!artist) return;
-      try {
-        const track = await trackFor(token, artist);
+  if (artists.length > 0) {
+    const queue = [...artists];
+    const worker = async () => {
+      while (queue.length > 0) {
+        const artist = queue.shift();
+        if (!artist) return;
+        const track = await trackFor(artist);
         if (track) tracks.push(track);
-      } catch (failure) {
-        if (failure.quota) limited = true;
       }
-    }
-  };
-  await Promise.all(Array.from({ length: 2 }, worker));
-
-  /* Keep gig order rather than the order the workers happened to finish in. */
-  tracks.sort((left, right) => artists.indexOf(left.artist) - artists.indexOf(right.artist));
+    };
+    await Promise.all(Array.from({ length: 3 }, worker));
+    tracks.sort((left, right) => artists.indexOf(left.artist) - artists.indexOf(right.artist));
+  }
 
   const result = {
     city,
@@ -258,17 +206,14 @@ export const lineup = async (city, week) => {
     ...weekRange(week),
     heading: weekHeading(week),
     events: events.length,
-    tracks,
     eventsList: events,
-    /* True when Spotify's quota cut the run short: the list is partial, not empty. */
-    limited: limited || undefined,
+    tracks,
+    empty: events.length === 0 || undefined,
   };
-  /* Only remember a run that actually found something: a rate-limited pass is not an answer. */
-  /* A run cut short by quota is not the finished answer, so it is not kept. */
-  if (!result.limited && (tracks.length > 0 || events.length === 0)) {
-    cache.set(key, result);
-    persist();
-  }
+
+  lineups.set(key, result);
+  writeJson(LINEUP_FILE, Object.fromEntries(lineups));
+  writeJson(ARTIST_FILE, artistCache);
   return result;
 };
 
@@ -288,11 +233,7 @@ const server = createServer(async (request, response) => {
 
   try {
     if (url.pathname === '/api/setup') {
-      return json(response, 200, {
-        ticketmaster: !!TM_KEY,
-        spotify: !!(CLIENT_ID && CLIENT_SECRET),
-        cities: CITIES,
-      });
+      return json(response, 200, { ticketmaster: !!TM_KEY, tracks: 'deezer', cities: CITIES });
     }
 
     if (url.pathname === '/api/lineup') {
@@ -302,17 +243,23 @@ const server = createServer(async (request, response) => {
       return json(response, 200, await lineup(city, week));
     }
 
-    if (url.pathname === '/api/lineup/all') {
+    if (url.pathname === '/api/playlist.m3u') {
+      const city = url.searchParams.get('city') ?? 'Berlin';
       const week = url.searchParams.get('week') === 'next' ? 'next' : 'this';
-      const all = [];
-      for (const city of CITIES) {
-        try {
-          all.push(await lineup(city, week));
-        } catch (failure) {
-          all.push({ city, week, error: failure.message });
-        }
+      if (!CITIES.includes(city)) return json(response, 400, { error: `unknown city ${city}` });
+
+      const data = await lineup(city, week);
+      const lines = ['#EXTM3U', `#PLAYLIST:${city}, ${weekHeading(week)}, ${data.label}`];
+      for (const track of data.tracks) {
+        lines.push(`#EXTINF:-1,${track.artist} - ${track.title}`, track.preview);
       }
-      return json(response, 200, { week, cities: all });
+
+      response.writeHead(200, {
+        'content-type': 'audio/x-mpegurl; charset=utf-8',
+        'content-disposition': `attachment; filename="${city.toLowerCase()}-${week}.m3u"`,
+        'access-control-allow-origin': ORIGIN,
+      });
+      return response.end(`${lines.join('\n')}\n`);
     }
 
     json(response, 404, { error: 'nothing here' });
@@ -321,23 +268,19 @@ const server = createServer(async (request, response) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`api on http://localhost:${PORT}`);
-  if (!TM_KEY) console.log('TICKETMASTER_API_KEY is not set');
-  if (!CLIENT_ID || !CLIENT_SECRET) console.log('SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET are not set');
+server.listen(PORT, async () => {
+  console.log(`api on http://localhost:${PORT}${TM_KEY ? '' : ' (TICKETMASTER_API_KEY is not set)'}`);
 
-  /* Fill the weeks before anyone asks, so the first visit is instant. */
-  if (!TM_KEY || !CLIENT_ID || !CLIENT_SECRET) return;
-  /* Only this week, and only once: Spotify's app quota is a daily allowance. */
+  /* Fill this week's lineups before anyone asks. Artists already known cost nothing. */
   setTimeout(async () => {
     for (const city of CITIES) {
       try {
         const data = await lineup(city, 'this');
-        console.log(`  warm: ${city} this -> ${data.tracks.length} tracks${data.limited ? ' (quota)' : ''}`);
+        console.log(`  warm: ${city} this -> ${data.tracks.length}/${data.events} tracks`);
       } catch (failure) {
         console.log(`  warm: ${city} this -> ${failure.message}`);
       }
-      await sleep(600);
+      await sleep(400);
     }
   }, 400);
 });
