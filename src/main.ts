@@ -41,6 +41,7 @@ const state: {
   city: string;
   week: 'this' | 'next';
   lineup: Lineup | null;
+  weeks: { this: Lineup | null; next: Lineup | null } | null;
   status: 'loading' | 'ok' | 'error';
   message: string;
   current: number;
@@ -49,6 +50,7 @@ const state: {
   city: 'Berlin',
   week: 'this',
   lineup: null,
+  weeks: null,
   status: 'loading',
   message: '',
   current: 0,
@@ -68,18 +70,40 @@ const load = async (): Promise<void> => {
   render();
 
   try {
-    const response = await fetch(`/api/lineup?city=${encodeURIComponent(state.city)}&week=${state.week}`);
-    const body = (await response.json()) as Lineup & { error?: string };
+    /* One request per city: the server prepares this week and next week together. */
+    const response = await fetch(`/api/city?city=${encodeURIComponent(state.city)}`);
+    const body = (await response.json()) as {
+      city: string;
+      this: Lineup;
+      next: Lineup;
+      error?: string;
+    };
     if (token !== run) return;
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
 
-    state.lineup = body;
+    state.weeks = { this: body.this, next: body.next };
+    state.lineup = state.weeks[state.week];
     state.status = 'ok';
   } catch (error) {
     if (token !== run) return;
     state.status = 'error';
     state.message = error instanceof Error ? error.message : String(error);
   }
+  render();
+};
+
+/** Both weeks are already in hand, so switching costs nothing. */
+const switchWeek = (week: 'this' | 'next'): void => {
+  const next = state.weeks?.[week];
+  if (!next) {
+    state.week = week;
+    void load();
+    return;
+  }
+  state.week = week;
+  state.lineup = next;
+  state.current = 0;
+  window.history.replaceState({}, '', playlistLink());
   render();
 };
 
@@ -217,6 +241,15 @@ const render = (): void => {
           Pick any row to hear it. Nothing to sign up for.
         </p>
         ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
+        ${
+          state.weeks
+            ? `<p class="also">${
+                state.week === 'this'
+                  ? `Next week is ready as well: <b>${state.weeks.next?.tracks.length ?? 0}</b> tracks. <button type="button" class="linkish" id="other">Show next week</button>`
+                  : `This week is still here: <b>${state.weeks.this?.tracks.length ?? 0}</b> tracks. <button type="button" class="linkish" id="other">Show this week</button>`
+              }</p>`
+            : ''
+        }
       </section>
 
       <section class="panel single">
@@ -282,16 +315,14 @@ const render = (): void => {
   });
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.week = button.dataset.week === 'next' ? 'next' : 'this';
-      void load();
-    });
+    button.addEventListener('click', () => switchWeek(button.dataset.week === 'next' ? 'next' : 'this'));
   });
 
   app.querySelectorAll<HTMLLIElement>('.tracks.selectable li').forEach((row) => {
     row.addEventListener('click', () => play(Number(row.dataset.index ?? '0')));
   });
 
+  app.querySelector<HTMLButtonElement>('#other')?.addEventListener('click', () => switchWeek(state.week === 'this' ? 'next' : 'this'));
   app.querySelector<HTMLButtonElement>('#tracks')?.addEventListener('click', () => void copy('tracks'));
   app.querySelector<HTMLButtonElement>('#link')?.addEventListener('click', () => void copy('link'));
 };

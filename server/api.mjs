@@ -236,6 +236,15 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { ticketmaster: !!TM_KEY, tracks: 'deezer', cities: CITIES });
     }
 
+    if (url.pathname === '/api/city') {
+      const city = url.searchParams.get('city') ?? 'Berlin';
+      if (!CITIES.includes(city)) return json(response, 400, { error: `unknown city ${city}` });
+
+      /* Both weeks at once: choosing a city should hand back the whole thing. */
+      const [thisWeek, nextWeek] = await Promise.all([lineup(city, 'this'), lineup(city, 'next')]);
+      return json(response, 200, { city, this: thisWeek, next: nextWeek });
+    }
+
     if (url.pathname === '/api/lineup') {
       const city = url.searchParams.get('city') ?? 'Berlin';
       const week = url.searchParams.get('week') === 'next' ? 'next' : 'this';
@@ -274,13 +283,15 @@ server.listen(PORT, async () => {
   /* Fill this week's lineups before anyone asks. Artists already known cost nothing. */
   setTimeout(async () => {
     for (const city of CITIES) {
-      try {
-        const data = await lineup(city, 'this');
-        console.log(`  warm: ${city} this -> ${data.tracks.length}/${data.events} tracks`);
-      } catch (failure) {
-        console.log(`  warm: ${city} this -> ${failure.message}`);
+      for (const week of ['this', 'next']) {
+        try {
+          const data = await lineup(city, week);
+          console.log(`  warm: ${city} ${week} -> ${data.tracks.length}/${data.events} tracks`);
+        } catch (failure) {
+          console.log(`  warm: ${city} ${week} -> ${failure.message}`);
+        }
+        await sleep(300);
       }
-      await sleep(400);
     }
   }, 400);
 });
