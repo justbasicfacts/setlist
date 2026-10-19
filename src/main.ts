@@ -340,6 +340,7 @@ const render = (): void => {
         <nav class="services" id="services" aria-label="Play this song elsewhere"></nav>
         <button type="button" class="closebar" id="closebar" aria-label="Close player">&times;</button>
         <button type="button" class="nextsong" id="nextsong">next &#9654;</button>
+        <button type="button" class="collapsebar" id="collapsebar" aria-label="Collapse player">&#9662;</button>
         <div id="yt"></div>
       </div>
 
@@ -413,6 +414,12 @@ const render = (): void => {
   app.querySelector<HTMLButtonElement>('#playall')?.addEventListener('click', () => void playAt(0));
   app.querySelector<HTMLButtonElement>('#closebar')?.addEventListener('click', () => stopPlaying());
   app.querySelector<HTMLButtonElement>('#nextsong')?.addEventListener('click', () => void playAt(position + 1));
+  app.querySelector<HTMLButtonElement>('#collapsebar')?.addEventListener('click', (event) => {
+    const bar = app.querySelector<HTMLElement>('#nowbar');
+    if (!bar) return;
+    const collapsed = bar.classList.toggle('collapsed');
+    (event.currentTarget as HTMLElement).textContent = collapsed ? '\u25B4' : '\u25BE';
+  });
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {

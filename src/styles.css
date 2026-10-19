@@ -1378,3 +1378,38 @@ body { padding-bottom: 0; }
 .nowbar .nextsong:hover { color: var(--lime); border-color: var(--lime); }
 .nowbar .noembed { margin: 8px 0; font-size: 13px; color: var(--muted); }
 .nowbar .noembed a { color: var(--lime); }
+
+/* collapsible bar, and more room around play all */
+.nowbar.collapsed {
+  max-height: none;
+  padding-bottom: 12px;
+}
+.nowbar.collapsed #yt,
+.nowbar.collapsed .services {
+  display: none;
+}
+.nowbar.collapsed .nowlabel {
+  margin-bottom: 0;
+  padding-right: 96px;
+}
+
+.nowbar .collapsebar {
+  position: absolute;
+  top: 6px;
+  right: 74px;
+  width: 26px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.nowbar .collapsebar:hover { color: var(--lime); border-color: var(--lime); }
+
+.playall {
+  padding: 9px 20px;
+  margin: 0 14px 0 0;
+}
