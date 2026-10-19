@@ -83,78 +83,9 @@ const performerNames = (event) => {
  * @param {{start: string, end: string}} range
  */
 
-/**
- * Songkick, which covers cities Ticketmaster does not.
- *
- * Their search and sitemap both answer 406 to a server, so a metro area has to be
- * addressed by its numeric id. Verified ids live here; add more as they are found.
- */
-const SONGKICK_IDS = {
-  budapest: '29047-hungary-budapest',
-  riga: '30848-latvia-riga',
-};
-
-const songkickEvents = async (city, range, memory, key, ttl) => {
-  const slug = fold(city.name);
-  /* Match the seeded ids however the name arrives, accents included. */
-  const metro =
-    SONGKICK_IDS[slug] ??
-    Object.entries(SONGKICK_IDS).find(([known]) => slug.startsWith(known) || known.startsWith(slug))?.[1];
-  if (!metro) return [];
-
-  const cacheKey = `songkick|${key}`;
-  const cached = memory.get(cacheKey);
-  if (cached && Date.now() - cached.at < ttl) return cached.events;
-
-  try {
-    const response = await fetch(`https://www.songkick.com/metro-areas/${metro}`, {
-      headers: {
-        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
-        'accept-language': 'en',
-        accept: 'text/html,application/xhtml+xml',
-      },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (!response.ok) return [];
-    const html = await response.text();
-
-    const events = jsonLdBlocks(html)
-      .filter(isEvent)
-      .map((event) => {
-        const startDate = String(event.startDate ?? '').slice(0, 10);
-        const date = startDate ? new Date(`${startDate}T12:00:00`) : null;
-        const performers = asArray(event.performer)
-          .map((entry) => (typeof entry === 'string' ? entry : entry?.name))
-          .filter(Boolean);
-
-        return {
-          date: startDate,
-          day: date ? date.toLocaleDateString('en-GB', { weekday: 'short' }) : '',
-          venue: String(event.location?.name ?? '').trim() || 'Venue to be announced',
-          district: '',
-          time: String(event.startDate ?? '').slice(11, 16),
-          artists: performers,
-          away: 0,
-          sameCity: true,
-          source: 'Songkick',
-        };
-      })
-      .filter((event) => event.date >= range.start && event.date <= range.end && event.artists.length > 0);
-
-    memory.set(cacheKey, { at: Date.now(), events });
-    return events;
-  } catch {
-    return [];
-  }
-};
-
 export const extraEvents = async (city, week, range) => {
   const slug = fold(city.name);
   const key = `${slug}|${range.start}`;
-
-  /* Songkick first: its listings are concerts by definition. */
-  const fromSongkick = await songkickEvents(city, range, memory, key, TTL_MS);
-  if (fromSongkick.length > 0) return fromSongkick;
 
   const source = readSources()[slug];
   if (!source?.url) return [];
