@@ -373,6 +373,46 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { cities: await findCities(query) }, request);
     }
 
+    if (url.pathname === '/api/reverse') {
+      const lat = Number(url.searchParams.get('lat'));
+      const lon = Number(url.searchParams.get('lon'));
+      if (Number.isNaN(lat) || Number.isNaN(lon)) {
+        return json(response, 400, { error: 'lat and lon are required' }, request);
+      }
+
+      try {
+        /* Photon's reverse route is not answering, so this uses Nominatim, at zoom 10
+           which is city level rather than a single building. */
+        const params = new URLSearchParams({
+          lat: String(lat),
+          lon: String(lon),
+          format: 'jsonv2',
+          zoom: '10',
+          'accept-language': 'en',
+        });
+        const upstream = await fetch(`${NOMINATIM}/reverse?${params.toString()}`, {
+          headers: { 'user-agent': UA, accept: 'application/json' },
+          signal: AbortSignal.timeout(10_000),
+        });
+        const body = await upstream.json();
+        const p = body.address ?? {};
+        const name = p.city ?? p.town ?? p.village ?? p.municipality ?? p.county ?? null;
+        const country = (p.country_code ?? '').toUpperCase();
+        const countryName = p.country ?? '';
+
+        return json(
+          response,
+          200,
+          {
+            city: name && country ? { name, country, countryName, region: p.state ?? '', lat, lon } : null,
+          },
+          request,
+        );
+      } catch {
+        return json(response, 200, { city: null }, request);
+      }
+    }
+
     if (url.pathname === '/api/lineup') {
       const name = url.searchParams.get('city') ?? '';
       const lat = Number(url.searchParams.get('lat'));

@@ -168,6 +168,11 @@ const renderSuggest = (): void => {
 };
 
 const pick = (city: City): void => {
+  try {
+    localStorage.setItem('whosplaying:city', JSON.stringify(city));
+  } catch {
+    /* private mode: the choice just does not survive the visit */
+  }
   state.city = city;
   state.query = '';
   state.cities = [];
@@ -328,7 +333,53 @@ const render = (): void => {
   });
 };
 
+/** The browser's own position, turned into a city by the server. */
+const askForLocation = async (): Promise<City | null> => {
+  if (!('geolocation' in navigator)) return null;
+
+  const position = await new Promise<GeolocationPosition | null>((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (found) => resolve(found),
+      () => resolve(null),
+      { timeout: 8000, maximumAge: 300_000, enableHighAccuracy: false },
+    );
+  });
+  if (!position) return null;
+
+  try {
+    const response = await fetch(
+      `${API}/api/reverse?lat=${position.coords.latitude}&lon=${position.coords.longitude}`,
+    );
+    if (!response.ok) return null;
+    const body = (await response.json()) as { city: City | null };
+    return body.city ?? null;
+  } catch {
+    return null;
+  }
+};
+
 void (async () => {
+  /* A city chosen before wins: no prompt, no surprise change of place. */
+  try {
+    const saved = localStorage.getItem('whosplaying:city');
+    if (saved) {
+      const city = JSON.parse(saved) as City;
+      if (city?.name && Number.isFinite(city.lat) && Number.isFinite(city.lon)) {
+        pick(city);
+        return;
+      }
+    }
+  } catch {
+    /* unreadable storage: fall through to asking */
+  }
+
+  /* Nothing chosen yet, so ask: the browser decides whether to show the prompt. */
+  const located = await askForLocation();
+  if (located) {
+    pick(located);
+    return;
+  }
+
   const berlin: City = { name: 'Berlin', country: 'DE', countryName: 'Germany', region: 'Berlin', lat: 52.5170365, lon: 13.3888599 };
   const response = await fetch(`${API}/api/cities?q=Berlin`).catch(() => null);
   if (response?.ok) {
