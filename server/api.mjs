@@ -29,8 +29,12 @@ const COUNTRY = { berlin: 'DE', london: 'GB', amsterdam: 'NL', dublin: 'IE' };
 
 const SPOTIFY = process.env.SPOTIFY_API_BASE ?? 'https://api.spotify.com/v1';
 const ACCOUNTS = process.env.SPOTIFY_ACCOUNTS_BASE ?? 'https://accounts.spotify.com';
-/* Spotify requires HTTPS except for loopback IPs, and rejects "localhost" by name. */
-const REDIRECT = process.env.SPOTIFY_REDIRECT ?? `http://127.0.0.1:${PORT}/callback`;
+/*
+ * Spotify requires HTTPS except for loopback IPs, and rejects "localhost" by name.
+ * The port is the site's, because that is the one registered in the dashboard: the dev
+ * proxy forwards /callback to this server.
+ */
+const REDIRECT = process.env.SPOTIFY_REDIRECT ?? 'http://127.0.0.1:5180/callback';
 const SCOPES = 'playlist-modify-public user-read-private';
 
 const AUTH_FILE = new URL('.spotify.json', import.meta.url).pathname;
