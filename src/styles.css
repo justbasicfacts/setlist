@@ -1,94 +1,445 @@
-/* Layout only; every colour, radius, font and spacing value is a theme token. */
+/*
+ * A poster, not a dashboard: black, one lime, big type, and dashed rules like the
+ * tear-off on a ticket. No design system, on purpose.
+ */
+
+:root {
+  --ink: #0b0b0c;
+  --panel: #141417;
+  --line: #2a2a30;
+  --paper: #f2f0e9;
+  --muted: #9a9aa4;
+  --lime: #c8f24e;
+  --max: 1080px;
+}
 
 * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
-  min-height: 100%;
-}
-
 body {
   margin: 0;
-  font-family: var(--ui-font, 'Roboto Condensed', system-ui, sans-serif);
-  background: var(--ui-color-bg-default);
-  color: var(--ui-color-text);
-  transition: background 0.2s ease, color 0.2s ease;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: 'Archivo', system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-.topbar {
-  border-bottom: 1px solid var(--ui-color-divider);
+/* ------------------------------------------------------------------ bar --- */
+
+.bar {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--line);
 }
 
-.topbar-inner {
+.brand {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
+  gap: 10px;
 }
 
-.page {
-  padding-top: 28px;
-  padding-bottom: 72px;
+.badge {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: var(--lime);
+  color: var(--ink);
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 13px;
+  border-radius: 8px;
 }
 
-/* City, the two weeks, and the range they cover, on one line where there is room. */
-.city-row {
+.name {
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+
+.tag {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* -------------------------------------------------------------- controls --- */
+
+main {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 32px 24px 72px;
+}
+
+.controls {
   display: flex;
   align-items: flex-end;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
+  padding-bottom: 20px;
+  border-bottom: 1px dashed var(--line);
 }
 
-.city-field {
-  flex: 1 1 260px;
-  min-width: 200px;
+.field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
 }
 
-.week-toggle {
+.field select {
+  appearance: none;
+  min-width: 190px;
+  padding: 12px 38px 12px 14px;
+  background: var(--panel)
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8'><path d='M1 1l5 5 5-5' fill='none' stroke='%239a9aa4' stroke-width='2'/></svg>")
+    no-repeat right 14px center;
+  color: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.field select:focus-visible,
+.weeks button:focus-visible,
+.shuffle:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.weeks {
   display: flex;
   gap: 8px;
 }
 
-.week-label {
+.weeks button {
+  padding: 12px 18px;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--paper);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.weeks button.on {
+  background: var(--lime);
+  border-color: var(--lime);
+  color: var(--ink);
+}
+
+.dates {
   padding-bottom: 12px;
+  color: var(--muted);
+  font-size: 14px;
 }
 
-/* Rows inside ui-list-item: a number, the text, and the action slot. */
-.row-index {
-  flex: 0 0 26px;
+/* The one bit of physical comedy: a sticker, slightly crooked. */
+.sticker {
+  margin-left: auto;
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  background: var(--lime);
+  color: var(--ink);
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  transform: rotate(-4deg);
+}
+
+/* ----------------------------------------------------------------- hero --- */
+
+.hero {
+  padding: 36px 0 28px;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: clamp(44px, 9vw, 92px);
+  line-height: 0.92;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+}
+
+.hero h1 em {
+  font-style: normal;
+  color: var(--lime);
+}
+
+.count {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.count b {
+  color: var(--paper);
+  font-family: 'Archivo Black', sans-serif;
+}
+
+.why {
+  max-width: 60ch;
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- panels --- */
+
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 22px;
+}
+
+.panel h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.hint {
+  font-family: 'Archivo', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* --------------------------------------------------------------- tracks --- */
+
+.tracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  counter-reset: none;
+}
+
+.tracks li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.tracks li:last-child {
+  border-bottom: none;
+}
+
+.tracks .n {
+  font-family: 'Archivo Black', sans-serif;
   font-size: 13px;
-  color: var(--ui-color-text-secondary);
+  color: var(--lime);
 }
 
-.row-main {
-  flex: 1;
-  min-width: 0;
+.tracks .t {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
-.field {
-  flex: 1 1 200px;
-  min-width: 160px;
+.tracks .t b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-@media (max-width: 600px) {
-  .page {
-    padding-top: 20px;
-    padding-bottom: 56px;
+.tracks .a {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tracks .src {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------------- gigs --- */
+
+.gigs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.gigs li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.gigs li:last-child {
+  border-bottom: none;
+}
+
+.night {
+  display: grid;
+  place-items: center;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+
+.who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.who b {
+  font-weight: 600;
+}
+
+.venue {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.note {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--lime);
+}
+
+.aside,
+.fineprint {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* The empty state earns its keep: it is the only place the joke can land. */
+.empty {
+  margin: 0;
+  padding: 24px 0;
+  font-family: 'Archivo Black', sans-serif;
+  font-size: 20px;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.empty span {
+  color: var(--muted);
+  font-family: 'Archivo', sans-serif;
+  font-size: 13px;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- extra --- */
+
+.extra {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.shuffle {
+  padding: 14px 22px;
+  background: transparent;
+  color: var(--paper);
+  border: 1px solid var(--paper);
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shuffle:hover {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.extra .fineprint {
+  margin: 0;
+  max-width: 46ch;
+}
+
+/* ----------------------------------------------------------------- small --- */
+
+@media (max-width: 860px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .week-label {
-    padding-bottom: 0;
+  .sticker {
+    margin-left: 0;
   }
-  /* The tagline is the first thing to go: without it the bar stays on one line. */
-  .brand-sub {
-    display: none;
+}
+
+@media (max-width: 520px) {
+  main {
+    padding: 24px 16px 56px;
   }
-  .topbar-inner {
-    gap: 8px;
+  .bar {
+    padding: 16px;
+  }
+  .field,
+  .field select {
+    width: 100%;
+    min-width: 0;
+  }
+  .weeks button {
+    flex: 1;
+  }
+  .controls {
+    gap: 12px;
+  }
+  .tracks li {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+  .tracks .src {
+    grid-column: 2;
+    text-align: left;
   }
 }
