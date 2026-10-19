@@ -72,7 +72,7 @@ const findCities = async (query: string): Promise<void> => {
   const token = ++search;
   if (query.trim().length < 2) {
     state.cities = [];
-    render();
+    renderSuggest();
     return;
   }
   try {
@@ -85,7 +85,8 @@ const findCities = async (query: string): Promise<void> => {
     if (token !== search) return;
     state.cities = [];
   }
-  render();
+  /* Only the dropdown is redrawn: re-rendering the page would take the caret with it. */
+  renderSuggest();
 };
 
 let run = 0;
@@ -122,6 +123,40 @@ const load = async (): Promise<void> => {
   render();
 };
 
+const renderSuggest = (): void => {
+  const host = app.querySelector<HTMLDivElement>('#suggest');
+  if (!host) return;
+
+  if (!state.open) {
+    host.innerHTML = '';
+    return;
+  }
+
+  if (state.cities.length === 0) {
+    host.innerHTML =
+      state.query.trim().length >= 2
+        ? `<p class="suggest empty-suggest">No city found for &ldquo;${escape(state.query.trim())}&rdquo;.</p>`
+        : '';
+    return;
+  }
+
+  host.innerHTML = `<ul class="suggest" role="listbox">
+    ${state.cities
+      .map(
+        (city, index) =>
+          `<li role="option"><button type="button" data-index="${index}">${escape(label(city))}</button></li>`,
+      )
+      .join('')}
+  </ul>`;
+
+  host.querySelectorAll<HTMLButtonElement>('button[data-index]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const city = state.cities[Number(button.dataset.index ?? '0')];
+      if (city) pick(city);
+    });
+  });
+};
+
 const pick = (city: City): void => {
   state.city = city;
   state.query = '';
@@ -153,26 +188,10 @@ const render = (): void => {
               type="search"
               autocomplete="off"
               placeholder="Any city in the world"
-              value="${escape(state.query)}"
               aria-expanded="${state.open}"
             />
           </label>
-          ${
-            state.open && state.cities.length === 0 && state.query.trim().length >= 2
-              ? `<p class="suggest empty-suggest">No city found for &ldquo;${escape(state.query.trim())}&rdquo;.</p>`
-              : ''
-          }
-          ${
-            state.open && state.cities.length > 0
-              ? `<ul class="suggest" role="listbox">
-                   ${state.cities
-                     .map(
-                       (city) => `<li role="option"><button type="button" data-city="${escape(`${city.name}|${city.countryName}|${city.region}|${city.lat}|${city.lon}`)}">${escape(label(city))}</button></li>`,
-                     )
-                     .join('')}
-                 </ul>`
-              : ''
-          }
+          <div id="suggest"></div>
         </div>
         <div class="weeks" role="group" aria-label="Which week">
           <button type="button" data-week="this" class="${state.week === 'this' ? 'on' : ''}">This week</button>
@@ -245,26 +264,11 @@ const render = (): void => {
   input?.addEventListener('focus', () => {
     if (state.cities.length > 0) {
       state.open = true;
-      render();
+      renderSuggest();
     }
   });
 
-  app.querySelectorAll<HTMLButtonElement>('[data-city]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const [name, countryName, region, lat, lon] = (button.dataset.city ?? '').split('|');
-      const city = state.cities.find((entry) => entry.name === name && String(entry.lat) === lat);
-      pick(
-        city ?? {
-          name,
-          countryName,
-          region,
-          lat: Number(lat),
-          lon: Number(lon),
-          country: '',
-        },
-      );
-    });
-  });
+  renderSuggest();
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {

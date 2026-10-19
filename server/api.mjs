@@ -16,7 +16,7 @@ const PORT = Number(process.env.API_PORT ?? 5181);
 const ORIGIN = process.env.SITE_ORIGIN ?? 'http://localhost:5180';
 const TM_KEY = process.env.TICKETMASTER_API_KEY ?? '';
 const DEEZER = 'https://api.deezer.com';
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
+const PHOTON = 'https://photon.komoot.io';
 const UA = 'whosplaying/0.1 (local dev)';
 
 const LINEUP_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
@@ -65,49 +65,54 @@ const weekHeading = (week) => (week === 'next' ? 'next week' : 'this week');
 
 /* ------------------------------------------------------------------- cities --- */
 
-/** Any city worth searching, from a free text query. */
+/**
+ * Any city worth searching, from a free text query.
+ *
+ * Photon is OpenStreetMap's autocomplete geocoder: it matches prefixes properly, which
+ * a plain place search does not ("Istan" otherwise returns a hamlet in Andalusia).
+ * Only real settlements are kept, and a prefix match outranks the rest.
+ */
 const findCities = async (query) => {
-  /*
-   * No featuretype filter: asking for "city" excludes places OSM tags as an
-   * administrative boundary, which is how Istanbul and several other capitals are
-   * stored. Settlements are picked out by hand below instead.
-   */
-  const params = new URLSearchParams({
-    q: query,
-    format: 'jsonv2',
-    addressdetails: '1',
-    limit: '12',
-    'accept-language': 'en',
-  });
+  const params = new URLSearchParams({ q: query, limit: '12', lang: 'en' });
 
-  const response = await fetch(`${NOMINATIM}/search?${params.toString()}`, {
+  const response = await fetch(`${PHOTON}/api/?${params.toString()}`, {
     headers: { 'user-agent': UA, accept: 'application/json' },
     signal: AbortSignal.timeout(12_000),
   });
-  if (!response.ok) throw Object.assign(new Error(`Nominatim answered ${response.status}`), { code: 502 });
+  if (!response.ok) throw Object.assign(new Error(`Photon answered ${response.status}`), { code: 502 });
   const body = await response.json();
 
-  const fold = (value) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  const rank = { city: 3, municipality: 2, town: 2, village: 1 };
+  const fold = (value) => String(value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+  const wanted = fold(query.trim());
+
   const seen = new Set();
   const cities = [];
-  for (const hit of body) {
-    const country = hit.address?.country_code?.toUpperCase() ?? '';
-    const settlement =
-      hit.address?.city ?? hit.address?.town ?? hit.address?.village ?? hit.address?.municipality ?? hit.address?.county;
-    const name = settlement ?? hit.name ?? hit.display_name?.split(',')[0] ?? '';
+  for (const feature of body.features ?? []) {
+    const p = feature.properties ?? {};
+    const kind = p.osm_value ?? p.type;
+    if (!(kind in rank)) continue;
+
+    const country = (p.countrycode ?? '').toUpperCase();
+    const name = p.name ?? p.city ?? '';
     const key = `${fold(name)}|${country}`;
-    if (!name || !country || !settlement || seen.has(key)) continue;
+    if (!name || !country || seen.has(key)) continue;
     seen.add(key);
+
+    const [lon, lat] = feature.geometry?.coordinates ?? [];
     cities.push({
       name,
       country,
-      countryName: hit.address?.country ?? '',
-      region: hit.address?.state ?? '',
-      lat: Number(hit.lat),
-      lon: Number(hit.lon),
+      countryName: p.country ?? '',
+      region: p.state ?? '',
+      lat: Number(lat),
+      lon: Number(lon),
+      importance: rank[kind] + (fold(name).startsWith(wanted) ? 10 : 0),
     });
   }
-  return cities;
+
+  cities.sort((left, right) => right.importance - left.importance);
+  return cities.map(({ importance, ...city }) => city);
 };
 
 /* ------------------------------------------------------------------- events --- */

@@ -873,3 +873,33 @@ main {
   border: 1px solid var(--line, rgba(255, 255, 255, 0.14));
   border-radius: 10px;
 }
+
+
+/* an input that looks like the rest of the controls */
+.field input {
+  appearance: none;
+  min-width: 250px;
+  padding: 12px 14px;
+  background: var(--panel);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 16px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.field input:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+
+.search input {
+  width: 260px;
+}
