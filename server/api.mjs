@@ -422,6 +422,13 @@ const buildLineup = async (city, week) => {
   }));
 
   const result = {
+    /* Say why a city is empty, rather than leaving a blank page. */
+    note:
+      rows.length === 0
+        ? LASTFM_KEY
+          ? 'No listings from any source for this week.'
+          : 'Ticketmaster has no listings here. A free LASTFM_API_KEY adds a second source.'
+        : undefined,
     city: { name: city.name, country: city.country, countryName: city.countryName, lat: city.lat, lon: city.lon },
     week,
     ...weekRange(week),

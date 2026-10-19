@@ -26,6 +26,7 @@ type Lineup = {
   heading: string;
   events: number;
   rows: Gig[];
+  note?: string;
   empty?: boolean;
 };
 
@@ -352,7 +353,7 @@ const render = (): void => {
           state.status === 'loading'
             ? `<p class="empty">Checking the listings&hellip;</p>`
             : lineup?.empty
-              ? `<p class="empty">No gigs in ${escape(lineup.city.name)} ${escape(lineup.heading)}.<br /><span>Try the other week, or another city.</span></p>`
+              ? `<p class="empty">No gigs in ${escape(lineup.city.name)} ${escape(lineup.heading)}.<br /><span>${escape(lineup.note ?? 'Try the other week, or another city.')}</span></p>`
               : lineup && lineup.rows.length > 0
                 ? `<ol class="gigs">
                      ${lineup.rows
