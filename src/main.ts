@@ -80,6 +80,7 @@ const findCities = async (query: string): Promise<void> => {
   }
   try {
     const response = await fetch(`${API}/api/cities?q=${encodeURIComponent(query.trim())}`);
+    if (!response.ok) throw new Error('no search');
     const body = (await response.json()) as { cities: City[] };
     if (token !== search) return;
     state.cities = body.cities ?? [];
@@ -111,7 +112,13 @@ const load = async (): Promise<void> => {
 
   try {
     const response = await fetch(`${API}/api/lineup?${params.toString()}`);
-    const body = (await response.json()) as Lineup & { error?: string };
+    const raw = await response.text();
+    let body: Lineup & { error?: string };
+    try {
+      body = JSON.parse(raw) as Lineup & { error?: string };
+    } catch {
+      throw new Error('The API is not answering yet. Deploy the backend and set VITE_API_BASE.');
+    }
     if (token !== run) return;
     if (!response.ok) throw new Error(body.error ?? `the server answered ${response.status}`);
 
