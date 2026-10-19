@@ -32,8 +32,13 @@ export function TopBar({ mode, session, onToggleMode, onSpotify }: Props) {
               <Typography variant="subtitle2" component="p">
                 Setlist
               </Typography>
-              <Typography variant="caption" color="text.secondary" component="p">
-                an event's songs, in one place
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                component="p"
+                className="brand-sub"
+              >
+                city playlists, week by week
               </Typography>
             </div>
           </Group>

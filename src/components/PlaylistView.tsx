@@ -14,14 +14,16 @@ import {
   Stack,
   Typography,
 } from '@justbasicfacts/lit-ui-react';
-import { formatDate, type EventItem } from '../data';
 import { IconClose } from '../icons';
+import { weekHeading, weekRange, type Playlist, type Week } from '../playlists';
 import { redirectUri, spotifyConfigured, topTracks, type Session, type Track } from '../spotify';
 
 type Props = {
-  event: EventItem;
+  city: string;
+  week: Week;
+  playlist?: Playlist;
   session: Session | null;
-  onBack: () => void;
+  onCreate: () => void;
   onAdd: (track: Track) => void;
   onRemove: (trackId: string) => void;
   onConnect: () => void;
@@ -34,11 +36,17 @@ const valueOf = (event: Event): string =>
   (event.target as HTMLInputElement).value ??
   '';
 
-/** One event: its setlist, the two ways to add to it, and the Spotify connection. */
-export function EventView({
-  event,
+/**
+ * The playlist for one city and one week: the tracks, the form that adds one, and
+ * the Spotify connection that suggests some. A city with nothing stored gets a
+ * create button instead of an empty list.
+ */
+export function PlaylistView({
+  city,
+  week,
+  playlist,
   session,
-  onBack,
+  onCreate,
   onAdd,
   onRemove,
   onConnect,
@@ -47,7 +55,6 @@ export function EventView({
 }: Props) {
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
-  const [copied, setCopied] = useState(false);
   const [suggestions, setSuggestions] = useState<Track[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [problem, setProblem] = useState('');
@@ -87,68 +94,68 @@ export function EventView({
     setArtist('');
   };
 
-  const copyCode = async () => {
-    try {
-      await navigator.clipboard.writeText(event.code);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-    }
-  };
+  const inPlaylist = (track: Track) => !!playlist?.tracks.some((item) => item.id === track.id);
 
-  const inSet = (track: Track) => event.tracks.some((item) => item.id === track.id);
-
-  return (
-    <Stack spacing={3}>
-      <Group spacing={1} align="center">
-        <Button size="sm" variant="ghost" onClick={onBack}>
-          ← All events
-        </Button>
-      </Group>
-
+  if (!city.trim()) {
+    return (
       <Card>
         <CardContent>
-          <Stack spacing={1.5}>
-            <Group spacing={1} align="center" wrap>
-              <Typography variant="overline" color="text.secondary" component="p">
-                {formatDate(event.date)}
-              </Typography>
-              <Chip label={event.venue} variant="outlined" nowrap />
-            </Group>
-            <Typography variant="h3" component="h1">
-              {event.name}
+          <Stack spacing={1}>
+            <Typography variant="h5" component="h2">
+              Pick a city
             </Typography>
-            <Group spacing={1.5} align="center" wrap>
-              <Typography variant="body2" color="text.secondary" component="p">
-                Share code
-              </Typography>
-              <Chip label={event.code} variant="filled" color="primary" nowrap />
-              <Button size="sm" variant="outline" onClick={copyCode}>
-                {copied ? 'Copied' : 'Copy'}
-              </Button>
-              <Typography variant="caption" color="text.secondary" component="p">
-                {event.tracks.length} {event.tracks.length === 1 ? 'track' : 'tracks'} so far
-              </Typography>
-            </Group>
+            <Typography variant="body1" color="text.secondary" component="p">
+              Type a city above and its playlist for this week shows up here. A city with no
+              playlist yet gets a create button.
+            </Typography>
           </Stack>
         </CardContent>
       </Card>
+    );
+  }
 
+  return (
+    <Stack spacing={3}>
       <Card>
         <CardContent>
           <Stack spacing={2}>
-            <Typography variant="h5" component="h2">
-              The setlist
-            </Typography>
+            <Group spacing={1} justify="space-between" align="center" wrap>
+              <div>
+                <Typography variant="overline" color="text.secondary" component="p">
+                  {weekHeading(week)} · {weekRange(week).label}
+                </Typography>
+                <Typography variant="h3" component="h1">
+                  {playlist?.city ?? city.trim()}
+                </Typography>
+              </div>
+              {playlist ? (
+                <Chip
+                  label={`${playlist.tracks.length} ${playlist.tracks.length === 1 ? 'track' : 'tracks'}`}
+                  variant="outlined"
+                  nowrap
+                />
+              ) : null}
+            </Group>
 
-            {event.tracks.length === 0 ? (
+            {!playlist ? (
+              <Stack spacing={1.5}>
+                <Typography variant="body1" color="text.secondary" component="p">
+                  No playlist for {city.trim()} {weekHeading(week).toLowerCase()} yet. Create one
+                  and start adding tracks.
+                </Typography>
+                <Group spacing={1}>
+                  <Button size="sm" onClick={onCreate}>
+                    Create playlist
+                  </Button>
+                </Group>
+              </Stack>
+            ) : playlist.tracks.length === 0 ? (
               <Typography variant="body2" color="text.secondary" component="p">
-                Nothing on it yet. Add the first track below, or pull one in from Spotify.
+                Empty so far. Add the first track below, or pull one in from Spotify.
               </Typography>
             ) : (
               <List>
-                {event.tracks.map((track, index) => (
+                {playlist.tracks.map((track, index) => (
                   <ListItem key={track.id} divider>
                     <span className="row-index">{index + 1}</span>
                     <span className="row-main">
@@ -157,7 +164,7 @@ export function EventView({
                       </Typography>
                       <Typography variant="caption" color="text.secondary" component="p">
                         {track.artist}
-                        {track.addedBy ? ` · added by ${track.addedBy}` : ''}
+                        {track.addedBy ? ` · ${track.addedBy}` : ''}
                       </Typography>
                     </span>
                     <IconButton
@@ -172,32 +179,32 @@ export function EventView({
               </List>
             )}
 
-            <Divider></Divider>
-
-            <Typography variant="subtitle2" component="p">
-              Add a track
-            </Typography>
-            <Group spacing={1} align="flex-end" wrap>
-              <div className="field">
-                <Input
-                  label="Title"
-                  placeholder="Song title"
-                  value={title}
-                  onInput={(event: Event) => setTitle(valueOf(event))}
-                />
-              </div>
-              <div className="field">
-                <Input
-                  label="Artist"
-                  placeholder="Who plays it"
-                  value={artist}
-                  onInput={(event: Event) => setArtist(valueOf(event))}
-                />
-              </div>
-              <Button size="sm" onClick={addManual} disabled={!title.trim()}>
-                Add
-              </Button>
-            </Group>
+            {playlist ? (
+              <>
+                <Divider></Divider>
+                <Group spacing={1} align="flex-end" wrap>
+                  <div className="field">
+                    <Input
+                      label="Title"
+                      placeholder="Song title"
+                      value={title}
+                      onInput={(event: Event) => setTitle(valueOf(event))}
+                    />
+                  </div>
+                  <div className="field">
+                    <Input
+                      label="Artist"
+                      placeholder="Who plays it"
+                      value={artist}
+                      onInput={(event: Event) => setArtist(valueOf(event))}
+                    />
+                  </div>
+                  <Button size="sm" onClick={addManual} disabled={!title.trim()}>
+                    Add
+                  </Button>
+                </Group>
+              </>
+            ) : null}
           </Stack>
         </CardContent>
       </Card>
@@ -206,9 +213,19 @@ export function EventView({
         <CardContent>
           <Stack spacing={2}>
             <Group spacing={1} justify="space-between" align="center" wrap>
-              <Typography variant="h5" component="h2">
-                From Spotify
-              </Typography>
+              <Group spacing={1} align="center" wrap>
+                <Typography variant="h5" component="h2">
+                  From Spotify
+                </Typography>
+                {session ? (
+                  <Chip
+                    label={session.demo ? 'sample tracks' : session.displayName}
+                    variant="outlined"
+                    color={session.demo ? 'warning' : 'success'}
+                    nowrap
+                  />
+                ) : null}
+              </Group>
               {session ? (
                 <Button size="sm" variant="ghost" onClick={onDisconnect}>
                   Disconnect
@@ -219,33 +236,17 @@ export function EventView({
             {!spotifyConfigured && !session ? (
               <Stack spacing={1.5}>
                 <Alert severity="warning" title="Spotify is not configured yet">
-                  Set VITE_SPOTIFY_CLIENT_ID in a .env file and register this redirect URI in
-                  the Spotify dashboard: {redirectUri()}
+                  Set VITE_SPOTIFY_CLIENT_ID in .env and register this redirect URI in the
+                  Spotify dashboard: {redirectUri()}
                 </Alert>
-                <Typography variant="body2" color="text.secondary" component="p">
-                  Until then you can try the connection with sample tracks, so the rest of
-                  the app works.
-                </Typography>
                 <Group spacing={1}>
                   <Button size="sm" variant="outline" onClick={onDemo}>
-                    Use demo connection
+                    Use sample tracks
                   </Button>
                 </Group>
               </Stack>
             ) : session ? (
               <Stack spacing={1.5}>
-                <Group spacing={1} align="center" wrap>
-                  <Typography variant="body2" component="p">
-                    Reading your top tracks
-                  </Typography>
-                  <Chip
-                    label={session.demo ? 'sample tracks' : session.displayName}
-                    variant="outlined"
-                    color={session.demo ? 'warning' : 'success'}
-                    nowrap
-                  />
-                </Group>
-
                 {problem ? (
                   <Alert severity="error" title="Spotify did not answer">
                     {problem}
@@ -253,10 +254,9 @@ export function EventView({
                 ) : null}
                 {loading ? (
                   <Typography variant="body2" color="text.secondary" component="p">
-                    Loading your tracks…
+                    Loading…
                   </Typography>
                 ) : null}
-
                 {suggestions && suggestions.length > 0 ? (
                   <List dense>
                     {suggestions.map((track) => (
@@ -272,29 +272,33 @@ export function EventView({
                         <Button
                           slot="secondary-action"
                           size="sm"
-                          variant={inSet(track) ? 'ghost' : 'outline'}
-                          disabled={inSet(track)}
+                          variant={inPlaylist(track) ? 'ghost' : 'outline'}
+                          disabled={!playlist || inPlaylist(track)}
                           onClick={() => onAdd({ ...track, addedBy: session.displayName })}
                         >
-                          {inSet(track) ? 'On the setlist' : 'Add'}
+                          {inPlaylist(track) ? 'Added' : 'Add'}
                         </Button>
                       </ListItem>
                     ))}
                   </List>
                 ) : null}
+                {!playlist ? (
+                  <Typography variant="caption" color="text.secondary" component="p">
+                    Create the playlist first, then tracks can be added to it.
+                  </Typography>
+                ) : null}
               </Stack>
             ) : (
               <Stack spacing={1.5}>
                 <Typography variant="body2" color="text.secondary" component="p">
-                  Connect once and the app can read the tracks you play most, so adding to a
-                  setlist starts from what you already like.
+                  Connect Spotify to pull in the tracks you play most.
                 </Typography>
                 <Group spacing={1}>
                   <Button size="sm" onClick={onConnect}>
                     Connect Spotify
                   </Button>
                   <Button size="sm" variant="outline" onClick={onDemo}>
-                    Use demo connection
+                    Use sample tracks
                   </Button>
                 </Group>
               </Stack>

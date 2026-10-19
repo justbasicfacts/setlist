@@ -1,7 +1,4 @@
-/*
- * Layout only. Colours, radii, fonts and spacing come from the theme, so switching
- * mode in the app bar restyles the page and the components together.
- */
+/* Layout only; every colour, radius, font and spacing value is a theme token. */
 
 * {
   box-sizing: border-box;
@@ -21,7 +18,6 @@ body {
   transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* The app bar is the library's; this only pins the row's ends and its hairline. */
 .topbar {
   border-bottom: 1px solid var(--ui-color-divider);
 }
@@ -39,6 +35,28 @@ body {
   padding-bottom: 72px;
 }
 
+/* City, the two weeks, and the range they cover, on one line where there is room. */
+.city-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.city-field {
+  flex: 1 1 260px;
+  min-width: 200px;
+}
+
+.week-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.week-label {
+  padding-bottom: 12px;
+}
+
 /* Rows inside ui-list-item: a number, the text, and the action slot. */
 .row-index {
   flex: 0 0 26px;
@@ -54,13 +72,23 @@ body {
 }
 
 .field {
-  flex: 1 1 220px;
-  min-width: 180px;
+  flex: 1 1 200px;
+  min-width: 160px;
 }
 
 @media (max-width: 600px) {
   .page {
     padding-top: 20px;
     padding-bottom: 56px;
+  }
+  .week-label {
+    padding-bottom: 0;
+  }
+  /* The tagline is the first thing to go: without it the bar stays on one line. */
+  .brand-sub {
+    display: none;
+  }
+  .topbar-inner {
+    gap: 8px;
   }
 }

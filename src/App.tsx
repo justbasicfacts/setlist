@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Alert, Container, Stack } from '@justbasicfacts/lit-ui-react';
 
-import { EventList } from './components/EventList';
-import { EventView } from './components/EventView';
+import { CityBar } from './components/CityBar';
+import { PlaylistView } from './components/PlaylistView';
 import { TopBar } from './components/TopBar';
-import { loadEvents, saveEvents, type EventItem } from './data';
+import {
+  cleanCity,
+  findPlaylist,
+  loadPlaylists,
+  sameCity,
+  savePlaylists,
+  type Playlist,
+  type Week,
+} from './playlists';
 import {
   beginLogin,
   completeLogin,
@@ -19,8 +27,9 @@ import { applyMode, storedMode, type Mode } from './theme';
 export function App() {
   const [mode, setMode] = useState<Mode>(storedMode);
   const [session, setSession] = useState<Session | null>(() => loadSession());
-  const [events, setEvents] = useState<EventItem[]>(() => loadEvents());
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [playlists, setPlaylists] = useState<Playlist[]>(() => loadPlaylists());
+  const [city, setCity] = useState('');
+  const [week, setWeek] = useState<Week>('this');
   const [problem, setProblem] = useState('');
 
   useEffect(() => {
@@ -28,8 +37,8 @@ export function App() {
   }, [mode]);
 
   useEffect(() => {
-    saveEvents(events);
-  }, [events]);
+    savePlaylists(playlists);
+  }, [playlists]);
 
   /* Finishing a Spotify redirect, if the URL carries a code. */
   useEffect(() => {
@@ -40,25 +49,35 @@ export function App() {
       .catch((error: Error) => setProblem(error.message));
   }, []);
 
-  const active = events.find((event) => event.id === activeId) ?? null;
+  const playlist = city.trim() ? findPlaylist(playlists, city, week) : undefined;
 
-  const updateEvent = (id: string, change: (event: EventItem) => EventItem) => {
-    setEvents((current) => current.map((event) => (event.id === id ? change(event) : event)));
+  /** Created on the go: the first thing that exists for this city and week. */
+  const create = () => {
+    const name = cleanCity(city);
+    if (!name) return;
+    if (findPlaylist(playlists, name, week)) return;
+    setPlaylists((current) => [...current, { city: name, week, tracks: [] }]);
+    setCity(name);
   };
 
-  const addTrack = (id: string, track: Track) => {
-    updateEvent(id, (event) =>
-      event.tracks.some((item) => item.id === track.id)
-        ? event
-        : { ...event, tracks: [...event.tracks, track] },
+  const change = (mutate: (playlist: Playlist) => Playlist) => {
+    setPlaylists((current) =>
+      current.map((entry) =>
+        entry.week === week && sameCity(entry.city, city) ? mutate(entry) : entry,
+      ),
     );
   };
 
-  const removeTrack = (id: string, trackId: string) => {
-    updateEvent(id, (event) => ({
-      ...event,
-      tracks: event.tracks.filter((item) => item.id !== trackId),
-    }));
+  const add = (track: Track) => {
+    change((entry) =>
+      entry.tracks.some((item) => item.id === track.id)
+        ? entry
+        : { ...entry, tracks: [...entry.tracks, track] },
+    );
+  };
+
+  const remove = (trackId: string) => {
+    change((entry) => ({ ...entry, tracks: entry.tracks.filter((item) => item.id !== trackId) }));
   };
 
   const connect = () => {
@@ -73,12 +92,11 @@ export function App() {
         onToggleMode={() => setMode(mode === 'dark' ? 'light' : 'dark')}
         onSpotify={() => {
           if (spotifyConfigured) connect();
-          else setActiveId(events[0]?.id ?? null);
         }}
       />
 
       <main>
-        <Container maxWidth="lg" className="page">
+        <Container maxWidth="md" className="page">
           <Stack spacing={3}>
             {problem ? (
               <Alert severity="error" title="Something went wrong">
@@ -86,38 +104,36 @@ export function App() {
               </Alert>
             ) : null}
 
-            {active ? (
-              <EventView
-                event={active}
-                session={session}
-                onBack={() => setActiveId(null)}
-                onAdd={(track) => addTrack(active.id, track)}
-                onRemove={(trackId) => removeTrack(active.id, trackId)}
-                onConnect={connect}
-                onDemo={() => {
-                  setSession({
-                    accessToken: 'demo',
-                    expiresAt: Date.now() + 60 * 60 * 1000,
-                    displayName: 'Demo listener',
-                    demo: true,
-                  });
-                  setProblem('');
-                }}
-                onDisconnect={() => {
-                  signOut();
-                  setSession(null);
-                }}
-              />
-            ) : (
-              <EventList
-                events={events}
-                onCreate={(event) => {
-                  setEvents((current) => [event, ...current]);
-                  setActiveId(event.id);
-                }}
-                onOpen={setActiveId}
-              />
-            )}
+            <CityBar
+              city={city}
+              week={week}
+              playlists={playlists}
+              onCity={setCity}
+              onWeek={setWeek}
+            />
+
+            <PlaylistView
+              city={city}
+              week={week}
+              playlist={playlist}
+              session={session}
+              onCreate={create}
+              onAdd={add}
+              onRemove={remove}
+              onConnect={connect}
+              onDemo={() =>
+                setSession({
+                  accessToken: 'demo',
+                  expiresAt: Date.now() + 60 * 60 * 1000,
+                  displayName: 'Sample listener',
+                  demo: true,
+                })
+              }
+              onDisconnect={() => {
+                signOut();
+                setSession(null);
+              }}
+            />
           </Stack>
         </Container>
       </main>
