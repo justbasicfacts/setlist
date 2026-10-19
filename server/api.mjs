@@ -199,12 +199,41 @@ const ticketmaster = async (city, week) => {
   return [];
 };
 
-const fromTicketmaster = (raw) =>
+const fold = (value) => String(value ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
+
+/** Kilometres between two points. */
+const distanceKm = (aLat, aLon, bLat, bLon) => {
+  const rad = (degrees) => (degrees * Math.PI) / 180;
+  const dLat = rad(bLat - aLat);
+  const dLon = rad(bLon - aLon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(aLat)) * Math.cos(rad(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(h));
+};
+
+/**
+ * Duplicate names, one level deep: "Ahmed Ali" and "Ahmed Ali ve Dadaşlar" are the same
+ * booking listed twice, so only the longer, fuller name is kept.
+ */
+const mergeNames = (names) => {
+  const cleaned = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  return cleaned.filter(
+    (name) => !cleaned.some((other) => other !== name && fold(other).includes(fold(name)) && fold(other) !== fold(name)),
+  );
+};
+
+const fromTicketmaster = (raw, origin) =>
   raw.map((event) => {
     const attractions = (event._embedded?.attractions ?? []).map((entry) => entry.name?.trim()).filter(Boolean);
     const headline = event.name?.split(' - ')[0]?.trim();
     const date = event.dates?.start?.localDate ?? '';
     const venue = event._embedded?.venues?.[0];
+
+    const venueLat = Number(venue?.location?.latitude ?? NaN);
+    const venueLon = Number(venue?.location?.longitude ?? NaN);
+    const away =
+      Number.isFinite(venueLat) && Number.isFinite(venueLon)
+        ? distanceKm(origin.lat, origin.lon, venueLat, venueLon)
+        : null;
 
     return {
       date,
@@ -212,7 +241,8 @@ const fromTicketmaster = (raw) =>
       venue: venue?.name?.trim() || 'Venue to be announced',
       district: venue?.city?.name ?? '',
       time: event.dates?.start?.localTime?.slice(0, 5) ?? '',
-      artists: attractions.length > 0 ? attractions : headline ? [headline] : [],
+      artists: mergeNames(attractions.length > 0 ? attractions : headline ? [headline] : []),
+      away,
       source: 'Ticketmaster',
     };
   });
@@ -260,7 +290,20 @@ const buildLineup = async (city, week) => {
   const cached = lineups.get(key);
   if (cached) return { ...cached, cached: true };
 
-  const events = fromTicketmaster(await ticketmaster(city, week));
+  /* Anything whose venue is more than 30 km away is not "in town". */
+  const all = fromTicketmaster(await ticketmaster(city, week), city).filter(
+    (event) => event.away === null || event.away <= 30,
+  );
+
+  /* Listings without a venue cannot be distance-checked, so they only stay as filler. */
+  const withVenue = all.filter((event) => event.venue !== 'Venue to be announced');
+  const events = withVenue.length >= 8 ? withVenue : all;
+
+  /* And the same artist should appear once, however the bill is spelled. */
+  const uniqueArtists = mergeNames(events.flatMap((event) => event.artists));
+  for (const event of events) {
+    event.artists = uniqueArtists.filter((name) => event.artists.some((own) => fold(own) === fold(name)));
+  }
 
   const songs = {};
   for (const artist of artistsIn(events)) songs[artist] = await songFor(artist);

@@ -238,7 +238,7 @@ const render = (): void => {
                          <ul class="songs">
                            ${gig.songs
                              .map(
-                               (song) => `<li class="${song.preview ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.preview ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? ` &mdash; <span class="song">${escape(song.title)}</span>` : ' <span class="song none">no song found</span>'}</li>`,
+                               (song) => `<li class="${song.preview ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.preview ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? `<span class="dash">&mdash;</span><span class="song">${escape(song.title)}</span>` : '<span class="song none">no song found</span>'}</li>`,
                              )
                              .join('')}
                            </ul>

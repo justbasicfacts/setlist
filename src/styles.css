@@ -1125,3 +1125,24 @@ main {
   display: grid;
   gap: 3px;
 }
+
+
+/* one song, one line */
+.gig .songs li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.gig .songs li .play { flex: 0 0 12px; }
+.gig .songs li .artist { flex: 0 0 auto; }
+.gig .songs li .dash { flex: 0 0 auto; color: var(--muted); }
+.gig .songs li .song {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
