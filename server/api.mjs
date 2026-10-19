@@ -10,6 +10,7 @@
  */
 
 import { createServer } from 'node:http';
+import { extraEvents } from './sources.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 
 /* Hosts set PORT; locally API_PORT keeps it out of the way of other tools. */
@@ -405,8 +406,9 @@ const buildLineup = async (city, week) => {
   let raw = await ticketmaster(city, week);
   let fallback = [];
   if (raw.length === 0) {
-    /* Nothing from Ticketmaster here: try Last.fm before showing an empty page. */
-    fallback = await lastFmEvents(city, week);
+    /* Nothing from Ticketmaster: try the city's own configured page, then Last.fm. */
+    fallback = await extraEvents(city, week, weekRange(week));
+    if (fallback.length === 0) fallback = await lastFmEvents(city, week);
   }
 
   const all = (raw.length > 0 ? fromTicketmaster(raw, city) : fallback)
