@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 4180",
     "typecheck": "tsc -p tsconfig.json --noEmit",
