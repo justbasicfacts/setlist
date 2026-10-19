@@ -1,12 +1,10 @@
 import { artistsIn, CITIES, fallbackTitle, fetchEvents, hasKey, weekHeading, weekRange, type Event, type Source, type Week } from './events';
 import {
   activeSession,
-  connect,
+  authoriseUrl,
   ensurePlaylist,
   findTrack,
-  finishConnect,
   madePlaylist,
-  signOut,
   spotifyReady,
   type FoundTrack,
   type MadePlaylist,
@@ -167,7 +165,9 @@ const render = (): void => {
         ${
           state.busy
             ? `<p class="count">Making the playlist&hellip;</p>`
-            : `<p class="count"><b>${state.tracks.length}</b> tracks &middot; <b>${new Set(state.events.flatMap((event) => event.artists)).size}</b> artists &middot; <b>0</b> decisions by you</p>`
+            : state.session
+              ? `<p class="count"><b>${state.tracks.length}</b> tracks &middot; <b>${new Set(state.events.flatMap((event) => event.artists)).size}</b> artists &middot; <b>0</b> decisions by you</p>`
+              : `<p class="count"><b>${new Set(state.events.flatMap((event) => event.artists)).size}</b> artists this week &middot; playlist waiting for one authorisation</p>`
         }
         <p class="why">
           One song from every artist playing in ${escape(state.city)} ${weekHeading(state.week)}, in gig order,
@@ -185,8 +185,8 @@ const render = (): void => {
             ? `<p class="empty">Spotify is not set up.<br /><span>Add SPOTIFY_CLIENT_ID to .env and register http://localhost:5180/ as a redirect URI.</span></p>`
             : !state.session
               ? `<div class="connect-block">
-                   <p class="empty">Connect once and we make the playlist in your account.<br /><span>We only create playlists and read your name. That is the lot.</span></p>
-                   <button type="button" class="shuffle big" id="connect">Connect Spotify</button>
+                   <p class="empty">Nobody has authorised this site yet.<br /><span>One click here, once, and every playlist after it is made automatically.</span></p>
+                   <button type="button" class="shuffle big" id="connect">Authorise once</button>
                  </div>`
               : state.busy
                 ? `<p class="empty">Asking ${escape(state.session.displayName)}&rsquo;s Spotify&hellip;<br /><span>one track per artist, then straight into a playlist.</span></p>`
@@ -218,7 +218,7 @@ const render = (): void => {
 
         ${
           state.session
-            ? `<p class="aside">Connected as ${escape(state.session.displayName)}. <button type="button" class="linkish" id="disconnect">Disconnect</button></p>`
+            ? `<p class="aside">Playlists are created in ${escape(state.session.displayName)}'s Spotify, automatically, once per city and week.</p>`
             : ''
         }
         ${known && !state.playlist && !state.busy && state.session ? `<p class="aside">There is a playlist from earlier (${escape(known.id)}), but Spotify would not return it. A new one will be made.</p>` : ''}
@@ -244,30 +244,15 @@ const render = (): void => {
   });
 
   app.querySelector<HTMLButtonElement>('#connect')?.addEventListener('click', () => {
-    void connect().catch((error: Error) => {
-      state.problem = error.message;
-      render();
-    });
+    window.location.assign(authoriseUrl);
   });
 
   app.querySelector<HTMLButtonElement>('#copy')?.addEventListener('click', () => void copy());
 
-  app.querySelector<HTMLButtonElement>('#disconnect')?.addEventListener('click', () => {
-    signOut();
-    state.session = null;
-    state.playlist = null;
-    state.tracks = [];
-    render();
-  });
 };
 
-/** Connect a returning redirect, then build. */
+/** The server holds the authorisation, so this is the whole start-up. */
 void (async () => {
-  try {
-    state.session = await finishConnect();
-    if (state.session) state.session = await activeSession();
-  } catch (error) {
-    state.problem = error instanceof Error ? error.message : 'The Spotify login failed';
-  }
+  state.session = await activeSession();
   await build();
 })();

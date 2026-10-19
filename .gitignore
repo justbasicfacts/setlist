@@ -2,3 +2,7 @@ node_modules
 dist
 .env
 .env.local
+
+# the Spotify refresh token, and the short-lived PKCE verifier
+server/.token.json
+server/.verifier.json

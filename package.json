@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview --port 4180",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "api": "node --env-file-if-exists=.env server/token.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.2",

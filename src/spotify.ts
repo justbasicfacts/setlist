@@ -1,157 +1,48 @@
 /**
- * Spotify, as the visitor.
+ * Spotify playlists, created on the visitor's behalf.
  *
- * A playlist has to be created inside somebody's account, which a client secret cannot
- * do: client credentials have no user. So this is the authorisation code flow with
- * PKCE, entirely in the browser, and no secret anywhere near it.
- *
- * Scopes: create and fill playlists, and read the profile so we know whose account it
- * is. Nothing is read from the account's listening history.
+ * A playlist has to be created inside an account, so somebody has to authorise the
+ * site once. That happens on the server (server/token.mjs), which keeps the refresh
+ * token; the page only ever sees a short-lived access token, so the client secret and
+ * the long-lived credential never reach the browser.
  */
-
-export type Session = {
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt: number;
-  userId: string;
-  displayName: string;
-};
 
 export type MadePlaylist = { id: string; url: string; count: number };
 
 const CLIENT_ID = typeof __SPOTIFY_CLIENT_ID__ === 'string' ? __SPOTIFY_CLIENT_ID__.trim() : '';
-const SCOPES = 'playlist-modify-public user-read-private';
-const VERIFIER_KEY = 'whosplaying:pkce';
-const SESSION_KEY = 'whosplaying:session';
 const PLAYLISTS_KEY = 'whosplaying:playlists';
 
 export const spotifyReady = CLIENT_ID.length > 0;
 
-export const redirectUri = (): string =>
-  `${window.location.origin}${window.location.pathname.replace(/index\.html$/, '')}`;
-
-const base64url = (bytes: Uint8Array): string =>
-  btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-
-const random = (length: number): string => {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return base64url(bytes);
-};
-
-const challenge = async (verifier: string): Promise<string> =>
-  base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
-
 /* ---------------------------------------------------------------- session --- */
 
-export const currentSession = (): Session | null => {
-  const raw = localStorage.getItem(SESSION_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as Session;
-  } catch {
-    return null;
-  }
-};
+export type Session = { accessToken: string; userId: string; displayName: string };
 
-const saveSession = (session: Session): void => {
-  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-};
-
-export const signOut = (): void => {
-  localStorage.removeItem(SESSION_KEY);
-  localStorage.removeItem(VERIFIER_KEY);
-};
-
-export const connect = async (): Promise<void> => {
-  if (!CLIENT_ID) return;
-  const verifier = random(64);
-  localStorage.setItem(VERIFIER_KEY, verifier);
-  const params = new URLSearchParams({
-    client_id: CLIENT_ID,
-    response_type: 'code',
-    redirect_uri: redirectUri(),
-    scope: SCOPES,
-    code_challenge_method: 'S256',
-    code_challenge: await challenge(verifier),
-  });
-  window.location.assign(`https://accounts.spotify.com/authorize?${params.toString()}`);
-};
-
-const tokenRequest = async (body: Record<string, string>) => {
-  const response = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: CLIENT_ID, ...body }).toString(),
-  });
-  if (!response.ok) throw new Error(`Spotify token ${response.status}`);
-  return (await response.json()) as { access_token: string; refresh_token?: string; expires_in: number };
-};
-
-/** Called on load: finishes a redirect, or returns the stored session. */
-export const finishConnect = async (): Promise<Session | null> => {
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get('code');
-  const error = params.get('error');
-
-  if (error) {
-    window.history.replaceState({}, '', redirectUri());
-    throw new Error(`Spotify said no: ${error}`);
-  }
-  if (!code) return currentSession();
-
-  const verifier = localStorage.getItem(VERIFIER_KEY);
-  if (!verifier) throw new Error('The Spotify login expired before it finished. Try again.');
-
-  const token = await tokenRequest({
-    grant_type: 'authorization_code',
-    code,
-    redirect_uri: redirectUri(),
-    code_verifier: verifier,
-  });
-  const me = await api<{ id: string; display_name?: string }>(token.access_token, '/me');
-
-  const session: Session = {
-    accessToken: token.access_token,
-    refreshToken: token.refresh_token,
-    expiresAt: Date.now() + token.expires_in * 1000,
-    userId: me.id,
-    displayName: me.display_name ?? 'you',
-  };
-  saveSession(session);
-  localStorage.removeItem(VERIFIER_KEY);
-  window.history.replaceState({}, '', redirectUri());
-  return session;
-};
-
-const refresh = async (session: Session): Promise<Session | null> => {
-  if (!session.refreshToken) return null;
-  try {
-    const token = await tokenRequest({ grant_type: 'refresh_token', refresh_token: session.refreshToken });
-    const next: Session = {
-      ...session,
-      accessToken: token.access_token,
-      refreshToken: token.refresh_token ?? session.refreshToken,
-      expiresAt: Date.now() + token.expires_in * 1000,
-    };
-    saveSession(next);
-    return next;
-  } catch {
-    signOut();
-    return null;
-  }
-};
-
-/** A token that is good for the next few minutes. */
+/**
+ * The refresh token lives on the server, so a visitor never logs in. If nobody has
+ * authorised yet the server answers 401 and the page offers the one-time link.
+ */
 export const activeSession = async (): Promise<Session | null> => {
-  const session = currentSession();
-  if (!session) return null;
-  if (session.expiresAt > Date.now() + 30_000) return session;
-  return refresh(session);
+  if (!spotifyReady) return null;
+  try {
+    const response = await fetch('/api/token');
+    if (!response.ok) return null;
+    const body = (await response.json()) as {
+      access_token: string;
+      user_id: string;
+      display_name?: string;
+    };
+    return {
+      accessToken: body.access_token,
+      userId: body.user_id,
+      displayName: body.display_name ?? 'you',
+    };
+  } catch {
+    return null;
+  }
 };
+
+export const authoriseUrl = '/auth';
 
 /* -------------------------------------------------------------------- api --- */
 
