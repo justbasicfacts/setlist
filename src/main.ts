@@ -242,7 +242,16 @@ const render = (): void => {
 
       <div class="nowbar" id="nowbar" hidden>
         <span class="nowlabel" id="nowlabel"></span>
-        <audio id="audio" controls preload="metadata"></audio>
+        <a class="ytlink" id="ytlink" href="https://www.youtube.com/" target="_blank" rel="noopener">open on YouTube</a>
+        <iframe
+          id="yt"
+          title="YouTube player"
+          width="100%"
+          height="152"
+          frameborder="0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowfullscreen
+        ></iframe>
       </div>
 
       <section class="panel single">
@@ -264,7 +273,7 @@ const render = (): void => {
                          <ul class="songs">
                            ${gig.songs
                              .map(
-                               (song) => `<li class="${song.preview ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.preview ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? `<span class="dash">&mdash;</span><span class="song">${escape(song.title)}</span>` : '<span class="song none">no song found</span>'}</li>`,
+                               (song) => `<li class="${song.title ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.title ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? `<span class="dash">&mdash;</span><span class="song">${escape(song.title)}</span>` : '<span class="song none">no song found</span>'}</li>`,
                              )
                              .join('')}
                            </ul>
@@ -304,24 +313,35 @@ const render = (): void => {
   const allSongs = (lineup?.rows ?? []).flatMap((gig) => gig.songs);
 
   app.querySelectorAll<HTMLLIElement>('.songs li.playable').forEach((row) => {
-    row.addEventListener('click', () => {
+    row.addEventListener('click', async () => {
       const artist = row.dataset.artist ?? '';
       const title = row.dataset.title ?? '';
-      const chosen = allSongs.find((song) => song.artist === artist && (song.title ?? '') === title && song.preview);
-      if (!chosen?.preview) return;
+      const chosen = allSongs.find((song) => song.artist === artist && (song.title ?? '') === title);
+      if (!chosen?.title) return;
 
-      const audio = app.querySelector<HTMLAudioElement>('#audio');
+      const frame = app.querySelector<HTMLIFrameElement>('#yt');
       const bar = app.querySelector<HTMLElement>('#nowbar');
       const labelEl = app.querySelector<HTMLElement>('#nowlabel');
-      if (audio) {
-        audio.src = chosen.preview;
-        audio.load();
-        void audio.play().catch(() => {
-          /* the controls are right there if the browser wants a press */
-        });
-      }
       if (bar) bar.hidden = false;
       if (labelEl) labelEl.textContent = `${chosen.artist} \u2014 ${chosen.title ?? ''}`;
+
+      const query = `${chosen.artist} ${chosen.title ?? ''}`.trim();
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+      const link = app.querySelector<HTMLAnchorElement>('#ytlink');
+      if (link) link.href = searchUrl;
+
+      /* The video id comes from the server, which reads YouTube's own results page. */
+      try {
+        const found = await fetch(`${API}/api/youtube?q=${encodeURIComponent(query)}`);
+        const body = (await found.json()) as { id: string | null };
+        if (frame) {
+          frame.src = body.id
+            ? `https://www.youtube.com/embed/${body.id}?autoplay=1&rel=0`
+            : searchUrl;
+        }
+      } catch {
+        if (frame) frame.src = searchUrl;
+      }
     });
   });
 

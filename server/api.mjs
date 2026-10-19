@@ -22,6 +22,7 @@ const NOMINATIM = 'https://nominatim.openstreetmap.org';
 const UA = 'whosplaying/0.1 (local dev)';
 
 const LINEUP_FILE = new URL('.lineup-cache.json', import.meta.url).pathname;
+const YT_FILE = new URL('.youtube-cache.json', import.meta.url).pathname;
 const ARTIST_FILE = new URL('.artist-cache.json', import.meta.url).pathname;
 
 const readJson = (path, fallback) => {
@@ -287,6 +288,41 @@ const songFor = async (artist) => {
   return found;
 };
 
+/* ------------------------------------------------------------------ youtube --- */
+
+const youtubeCache = readJson(YT_FILE, {});
+
+/**
+ * The first video id YouTube returns for a search.
+ *
+ * There is no key here, so this reads the results page the same way a browser does.
+ * Only ids are taken, never anything else, and each query is remembered.
+ */
+const youtubeId = async (query) => {
+  const key = query.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(youtubeCache, key)) return youtubeCache[key];
+
+  let id = null;
+  try {
+    const params = new URLSearchParams({ search_query: query, sp: 'EgIQAQ%3D%3D' });
+    const response = await fetch(`https://www.youtube.com/results?${params.toString()}`, {
+      headers: {
+        'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        'accept-language': 'en',
+      },
+      signal: AbortSignal.timeout(12_000),
+    });
+    const html = await response.text();
+    id = /"videoId":"([A-Za-z0-9_-]{11})"/.exec(html)?.[1] ?? null;
+  } catch {
+    /* no id: the page offers a plain search link instead */
+  }
+
+  youtubeCache[key] = id;
+  writeJson(YT_FILE, youtubeCache);
+  return id;
+};
+
 /* ------------------------------------------------------------------- lineup --- */
 
 const lineups = new Map(Object.entries(readJson(LINEUP_FILE, {})));
@@ -430,6 +466,13 @@ const server = createServer(async (request, response) => {
         countryName: url.searchParams.get('countryName') ?? '',
       };
       return json(response, 200, await buildLineup(city, week), request);
+    }
+
+    if (url.pathname === '/api/youtube') {
+      const query = (url.searchParams.get('q') ?? '').trim();
+      if (!query) return json(response, 400, { error: 'q is required' }, request);
+      const id = await youtubeId(query);
+      return json(response, 200, { id, url: id ? `https://www.youtube.com/watch?v=${id}` : null }, request);
     }
 
     if (url.pathname === '/api/setup') {
