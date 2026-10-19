@@ -174,8 +174,8 @@ const render = (): void => {
 
   app.innerHTML = `
     <header class="bar">
-      <div class="brand"><span class="badge">WP</span><span class="name">Who's Playing?</span></div>
-      <p class="tag">Every gig in town this week, and one song from everyone on the bill.</p>
+      <p class="wordmark">who's playing?</p>
+      <p class="tag">Every gig in town this week, with one song from everyone on the bill.</p>
     </header>
 
     <main>
