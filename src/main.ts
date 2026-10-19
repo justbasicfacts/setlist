@@ -1,9 +1,19 @@
-import { CITIES, eventsFor, playlistFor, weekHeading, weekRange, type Week } from './events';
+import {
+  CITIES,
+  fetchEvents,
+  hasKey,
+  playlistFrom,
+  weekHeading,
+  weekRange,
+  type Event,
+  type Source,
+  type Week,
+} from './events';
 import './styles.css';
 
 /**
- * Three choices and one automatic result: a city, a week, and the playlist that the
- * gigs of that week produce. Nothing is typed by hand, which is the whole joke.
+ * Two choices and one automatic result: a city, a week, and the playlist the gigs of
+ * that week produce. Nothing is typed by hand, which is the whole joke.
  */
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -11,15 +21,37 @@ if (!app) throw new Error('No #app to render into');
 
 let city = 'Berlin';
 let week: Week = 'this';
+let events: Event[] = [];
+let source: Source = 'sample';
+let problem = '';
+let loading = true;
+let requestId = 0;
 
 const escape = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] as string);
 
+const load = async (): Promise<void> => {
+  const token = ++requestId;
+  loading = true;
+  problem = '';
+  render();
+
+  const result = await fetchEvents(city, week);
+  if (token !== requestId) return; /* a newer choice has already been made */
+
+  events = result.events;
+  source = result.source;
+  problem = result.problem ?? '';
+  loading = false;
+  render();
+};
+
 const render = (): void => {
-  const events = eventsFor(city, week);
-  const tracks = playlistFor(city, week);
+  const tracks = playlistFrom(events);
   const venues = new Set(events.map((event) => event.venue)).size;
   const artists = new Set(events.flatMap((event) => event.artists)).size;
+  const sourceLabel =
+    source === 'ticketmaster' ? 'live from Ticketmaster' : hasKey ? 'sample lineups' : 'sample lineups - no API key';
 
   app.innerHTML = `
     <header class="bar">
@@ -45,39 +77,46 @@ const render = (): void => {
         </div>
 
         <span class="dates">${weekRange(week).label}</span>
-        <span class="sticker">fully automatic</span>
+        <span class="sticker">${escape(sourceLabel)}</span>
       </section>
 
       <section class="hero">
         <h1>${escape(city)},<br /><em>${weekHeading(week)}</em></h1>
-        <p class="count">
-          <b>${tracks.length}</b> tracks &middot; <b>${artists}</b> artists &middot;
-          <b>${venues}</b> venues &middot; <b>0</b> decisions by you
-        </p>
+        ${
+          loading
+            ? `<p class="count">Checking who is in town&hellip;</p>`
+            : `<p class="count">
+                 <b>${tracks.length}</b> tracks &middot; <b>${artists}</b> artists &middot;
+                 <b>${venues}</b> venues &middot; <b>0</b> decisions by you
+               </p>`
+        }
         <p class="why">
           One song from every artist playing in ${escape(city)} ${weekHeading(week)}, in gig order.
           So when someone asks if you have heard of them, you can say yes and mean it.
         </p>
+        ${problem ? `<p class="problem">${escape(problem)}</p>` : ''}
       </section>
 
       <section class="split">
         <div class="panel">
           <h2>The playlist <span class="hint">generated, not curated</span></h2>
           ${
-            tracks.length === 0
-              ? `<p class="empty">Nothing on. Either the city is quiet, or we made this up.<br /><span>(We made this up.)</span></p>`
-              : `<ol class="tracks">
-                  ${tracks
-                    .map(
-                      (track, index) => `
-                    <li>
-                      <span class="n">${String(index + 1).padStart(2, '0')}</span>
-                      <span class="t"><b>${escape(track.title)}</b><span class="a">${escape(track.artist)}</span></span>
-                      <span class="src">${escape(track.event.venue)} &middot; ${escape(track.event.day)}</span>
-                    </li>`,
-                    )
-                    .join('')}
-                </ol>`
+            loading
+              ? `<p class="empty">Hold on&hellip;<br /><span>asking around.</span></p>`
+              : tracks.length === 0
+                ? `<p class="empty">Nothing on. Either the city is quiet, or we made this up.<br /><span>(We made this up.)</span></p>`
+                : `<ol class="tracks">
+                    ${tracks
+                      .map(
+                        (track, index) => `
+                      <li>
+                        <span class="n">${String(index + 1).padStart(2, '0')}</span>
+                        <span class="t"><b>${escape(track.title)}</b><span class="a">${escape(track.artist)}</span></span>
+                        <span class="src">${escape(track.event.venue)} &middot; ${escape(track.event.day)}</span>
+                      </li>`,
+                      )
+                      .join('')}
+                  </ol>`
           }
         </div>
 
@@ -95,7 +134,9 @@ const render = (): void => {
               )
               .join('')}
           </ul>
-          <p class="aside">Yes, the lineups are invented. The enthusiasm is not.</p>
+          <p class="aside">
+            ${source === 'ticketmaster' ? 'Lineups from the Ticketmaster Discovery API.' : 'Invented lineups, standing in for the real listings.'}
+          </p>
         </div>
       </section>
 
@@ -111,13 +152,13 @@ const render = (): void => {
 
   app.querySelector<HTMLSelectElement>('#city')?.addEventListener('change', (event) => {
     city = (event.target as HTMLSelectElement).value;
-    render();
+    void load();
   });
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {
       week = button.dataset.week === 'next' ? 'next' : 'this';
-      render();
+      void load();
     });
   });
 
@@ -125,8 +166,8 @@ const render = (): void => {
     const others = CITIES.filter((option) => option !== city);
     const next = others[Math.floor(Math.random() * others.length)];
     if (next) city = next;
-    render();
+    void load();
   });
 };
 
-render();
+void load();

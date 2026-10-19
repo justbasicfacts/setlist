@@ -197,6 +197,12 @@ main {
   font-family: 'Archivo Black', sans-serif;
 }
 
+.problem {
+  margin: 12px 0 0;
+  color: var(--lime);
+  font-size: 13px;
+}
+
 .why {
   max-width: 60ch;
   margin: 14px 0 0;
