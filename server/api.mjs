@@ -200,7 +200,7 @@ const songFor = async (artist) => {
       });
       matches.sort((left, right) => (right.rank ?? 0) - (left.rank ?? 0));
       const best = matches[0];
-      if (best) found = { title: best.title, album: best.album?.title ?? null };
+      if (best) found = { title: best.title, album: best.album?.title ?? null, preview: best.preview ?? null };
     }
   } catch {
     /* no song: the gig still shows */

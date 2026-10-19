@@ -8,7 +8,7 @@ import './styles.css';
  */
 
 type City = { name: string; country: string; countryName: string; region: string; lat: number; lon: number };
-type Song = { artist: string; title: string | null; album?: string | null };
+type Song = { artist: string; title: string | null; album?: string | null; preview?: string | null };
 type Gig = {
   date: string;
   day: string;
@@ -214,6 +214,11 @@ const render = (): void => {
         ${state.message ? `<p class="problem">${escape(state.message)}</p>` : ''}
       </section>
 
+      <div class="nowbar" id="nowbar" hidden>
+        <span class="nowlabel" id="nowlabel"></span>
+        <audio id="audio" controls preload="metadata"></audio>
+      </div>
+
       <section class="panel single">
         ${
           state.status === 'loading'
@@ -234,7 +239,7 @@ const render = (): void => {
                          <ul class="songs">
                            ${gig.songs
                              .map(
-                               (song) => `<li><span class="artist">${escape(song.artist)}</span>${song.title ? ` &mdash; <span class="song">${escape(song.title)}</span>` : ' <span class="song none">no song found</span>'}</li>`,
+                               (song) => `<li class="${song.preview ? 'playable' : ''}" data-artist="${escape(song.artist)}" data-title="${escape(song.title ?? '')}"><span class="play" aria-hidden="true">${song.preview ? '\u25B6' : ''}</span><span class="artist">${escape(song.artist)}</span>${song.title ? ` &mdash; <span class="song">${escape(song.title)}</span>` : ' <span class="song none">no song found</span>'}</li>`,
                              )
                              .join('')}
                          </ul>
@@ -269,6 +274,30 @@ const render = (): void => {
   });
 
   renderSuggest();
+
+  const allSongs = (lineup?.rows ?? []).flatMap((gig) => gig.songs);
+
+  app.querySelectorAll<HTMLLIElement>('.songs li.playable').forEach((row) => {
+    row.addEventListener('click', () => {
+      const artist = row.dataset.artist ?? '';
+      const title = row.dataset.title ?? '';
+      const chosen = allSongs.find((song) => song.artist === artist && (song.title ?? '') === title && song.preview);
+      if (!chosen?.preview) return;
+
+      const audio = app.querySelector<HTMLAudioElement>('#audio');
+      const bar = app.querySelector<HTMLElement>('#nowbar');
+      const labelEl = app.querySelector<HTMLElement>('#nowlabel');
+      if (audio) {
+        audio.src = chosen.preview;
+        audio.load();
+        void audio.play().catch(() => {
+          /* the controls are right there if the browser wants a press */
+        });
+      }
+      if (bar) bar.hidden = false;
+      if (labelEl) labelEl.textContent = `${chosen.artist} \u2014 ${chosen.title ?? ''}`;
+    });
+  });
 
   app.querySelectorAll<HTMLButtonElement>('button[data-week]').forEach((button) => {
     button.addEventListener('click', () => {
